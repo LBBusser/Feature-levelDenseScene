@@ -8,4 +8,5 @@ Drawing from the strengths of state-of-the-art in-context visual prompts researc
 Together, these three focal points aim to create a framework where existing large vision models can be significantly enhanced, showcasing improved context-awareness, adaptability, and scalability. This approach not only tries to support the research of current vision-language model capabilities but also bridges the gap between theoretical research and practical, real-world applications.
 
 [1] Balažević, I., Steiner, D., Parthasarathy, N., Arandjelović, R., & Hénaff, O. J. (2023). Towards In-context Scene Understanding. arXiv preprint arXiv:2306.01667.
+
 [2] Bai, Y., Geng, X., Mangalam, K., Bar, A., Yuille, A., Darrell, T., ... & Efros, A. A. (2023). Sequential modeling enables scalable learning for large vision models. arXiv preprint arXiv:2312.00785.
