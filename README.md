@@ -1,4 +1,4 @@
-# incontextThesis
+# Efficient In-Context Learning for Enhanced Visual Scene Understanding
 
 This thesis project aims to advance the frontier of visual scene understanding by developing scalable in-context learning frameworks inspired by cutting-edge methodologies in the field. The project is motivated by works such as [1] which emphasizes the significance of contextual information in interpreting visual data, and [2] which addresses the challenges, using NLP techniques, of learning scalability in large vision models.
 Drawing from the strengths of state-of-the-art in-context visual prompts research, the project seeks to investigate methods that enable models to efficiently interpret and analyze visual scenes. The core of the investigation revolves around the following objectives:
