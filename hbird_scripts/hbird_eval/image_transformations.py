@@ -9,7 +9,7 @@ import torch
 def random_resize_crop(image, target, size=(256, 256), scale=(0.08, 1.0), ratio=(3.0 / 4.0, 4.0 / 3.0)):
     ## convert target to tensor
     if not isinstance(target, torch.Tensor):
-        target = transforms.ToTensor()(target)
+        target = transforms.PILToTensor()(target)
     i, j, h, w = transforms.RandomResizedCrop.get_params(image, scale=scale, ratio=ratio)
     image = F.resized_crop(image, i, j, h, w, size, interpolation=Image.BILINEAR)
     target = F.resized_crop(target, i, j, h, w, size, interpolation=Image.NEAREST)
@@ -47,6 +47,7 @@ class RandomResizedCrop(object):
         self.scale = scale
         self.ratio = ratio
         self.probability = probability
+
 
     def __call__(self, img, target):
         if random.random() < self.probability:

@@ -36,7 +36,7 @@ import scipy.io as sio
 from torchvision.datasets import CIFAR10
 
 
-project_name = "MSCOCO_hbird_eval"
+project_name = "MSCOCO_hbird_eval_stuff"
 
 
 
@@ -88,7 +88,7 @@ class Dataset(torch.nn.Module):
         pass
 
 class MSCOCODataset(Dataset):
-    def __init__(self, root_dir, split='train', transform=None, shared_transform = None, subset_indices= None):
+    def __init__(self, root_dir, split='train', transform=None, shared_transform = None, subset_indices= None, task = "normal"):
         """
         Args:
             root_dir (string): Directory with all the images and masks.
@@ -97,13 +97,21 @@ class MSCOCODataset(Dataset):
         """
         self.root_dir = root_dir
         self.split = split
+        self.task = task
         self.transform = transform
         self.shared_transform = shared_transform
-        self.images_dir = os.path.join(root_dir, split + '2017')
-        self.masks_dir = os.path.join(root_dir, split + '_masks2017')
-
+        if self.task == "stuff":
+            self.images_dir = os.path.join(root_dir, split + '2017')
+            self.masks_dir = os.path.join(root_dir, "stuff_" + split + '2017_pixelmaps')
+        elif self.task == "normal":
+            self.images_dir = os.path.join(root_dir, split + '2017')
+            self.masks_dir = os.path.join(root_dir, split + '2017')
+        else:
+            self.images_dir = os.path.join(root_dir, split + '2017')
+            self.masks_dir = os.path.join(root_dir, split + '2017')
         self.images = sorted(os.listdir(self.images_dir))
         self.masks = sorted(os.listdir(self.masks_dir))
+      
 
         if subset_indices is not None:
             self.images = [self.images[i] for i in subset_indices]
@@ -123,6 +131,8 @@ class MSCOCODataset(Dataset):
             image = self.transform(image)
         if self.shared_transform:
             image, mask = self.shared_transform(image, mask)
+        if self.task == "stuff":
+            mask = mask - 91 #Because the stuff labels begin from 92. 182-91=    
         return image, mask
 class NYUv2(Dataset):
     """
@@ -248,142 +258,6 @@ class NYUv2(Dataset):
             download_depth(self.root)
         print("Done!")
 
-
-def download_rgb(root: str):
-    train_url = "http://www.doc.ic.ac.uk/~ahanda/nyu_train_rgb.tgz"
-    test_url = "http://www.doc.ic.ac.uk/~ahanda/nyu_test_rgb.tgz"
-
-    def _proc(url: str, dst: str):
-        if not os.path.exists(dst):
-            tar = os.path.join(root, url.split("/")[-1])
-            if not os.path.exists(tar):
-                download_url(url, root)
-            if os.path.exists(tar):
-                _unpack(tar)
-                _replace_folder(tar.rstrip(".tgz"), dst)
-                _rename_files(dst, lambda x: x.split("_")[2])
-
-    _proc(train_url, os.path.join(root, "train_rgb"))
-    _proc(test_url, os.path.join(root, "test_rgb"))
-
-
-def download_seg(root: str):
-    train_url = "https://github.com/ankurhanda/nyuv2-meta-data/raw/master/train_labels_13/nyuv2_train_class13.tgz"
-    test_url = "https://github.com/ankurhanda/nyuv2-meta-data/raw/master/test_labels_13/nyuv2_test_class13.tgz"
-
-    def _proc(url: str, dst: str):
-        if not os.path.exists(dst):
-            tar = os.path.join(root, url.split("/")[-1])
-            if not os.path.exists(tar):
-                download_url(url, root)
-            if os.path.exists(tar):
-                _unpack(tar)
-                _replace_folder(tar.rstrip(".tgz"), dst)
-                _rename_files(dst, lambda x: x.split("_")[3])
-
-    _proc(train_url, os.path.join(root, "train_seg13"))
-    _proc(test_url, os.path.join(root, "test_seg13"))
-
-
-def download_sn(root: str):
-    url = "https://www.dropbox.com/s/dn5sxhlgml78l03/nyu_normals_gt.zip"
-    train_dst = os.path.join(root, "train_sn")
-    test_dst = os.path.join(root, "test_sn")
-
-    if not os.path.exists(train_dst) or not os.path.exists(test_dst):
-        tar = os.path.join(root, url.split("/")[-1])
-        if not os.path.exists(tar):
-            req = requests.get(url + "?dl=1") # dropbox
-            with open(tar, 'wb') as f:
-                f.write(req.content)
-        if os.path.exists(tar):
-            _unpack(tar)
-            if not os.path.exists(train_dst):
-                _replace_folder(
-                    os.path.join(root, "nyu_normals_gt", "train"), train_dst
-                )
-                _rename_files(train_dst, lambda x: x[1:])
-            if not os.path.exists(test_dst):
-                _replace_folder(os.path.join(root, "nyu_normals_gt", "test"), test_dst)
-                _rename_files(test_dst, lambda x: x[1:])
-            shutil.rmtree(os.path.join(root, "nyu_normals_gt"))
-
-
-def download_depth(root: str):
-    url = (
-        "http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat"
-    )
-    train_dst = os.path.join(root, "train_depth")
-    test_dst = os.path.join(root, "test_depth")
-
-    if not os.path.exists(train_dst) or not os.path.exists(test_dst):
-        tar = os.path.join(root, url.split("/")[-1])
-        if not os.path.exists(tar):
-            download_url(url, root)
-        if os.path.exists(tar):
-            train_ids = [
-                f.split(".")[0] for f in os.listdir(os.path.join(root, "train_rgb"))
-            ]
-            _create_depth_files(tar, root, train_ids)
-
-
-def _unpack(file: str):
-    """
-    Unpacks tar and zip, does nothing for any other type
-    :param file: path of file
-    """
-    path = file.rsplit(".", 1)[0]
-
-    if file.endswith(".tgz"):
-        tar = tarfile.open(file, "r:gz")
-        tar.extractall(path)
-        tar.close()
-    elif file.endswith(".zip"):
-        zip = zipfile.ZipFile(file, "r")
-        zip.extractall(path)
-        zip.close()
-
-
-def _rename_files(folder: str, rename_func: callable):
-    """
-    Renames all files inside a folder based on the passed rename function
-    :param folder: path to folder that contains files
-    :param rename_func: function renaming filename (not including path) str -> str
-    """
-    imgs_old = os.listdir(folder)
-    imgs_new = [rename_func(file) for file in imgs_old]
-    for img_old, img_new in zip(imgs_old, imgs_new):
-        shutil.move(os.path.join(folder, img_old), os.path.join(folder, img_new))
-
-
-def _replace_folder(src: str, dst: str):
-    """
-    Rename src into dst, replacing/overwriting dst if it exists.
-    """
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
-    shutil.move(src, dst)
-
-
-def _create_depth_files(mat_file: str, root: str, train_ids: list):
-    """
-    Extract the depth arrays from the mat file into images
-    :param mat_file: path to the official labelled dataset .mat file
-    :param root: The root directory of the dataset
-    :param train_ids: the IDs of the training images as string (for splitting)
-    """
-    os.mkdir(os.path.join(root, "train_depth"))
-    os.mkdir(os.path.join(root, "test_depth"))
-    train_ids = set(train_ids)
-
-    depths = h5py.File(mat_file, "r")["depths"]
-    for i in range(len(depths)):
-        img = (depths[i] * 1e4).astype(np.uint16).T
-        id_ = str(i + 1).zfill(4)
-        folder = "train" if id_ in train_ids else "test"
-        save_path = os.path.join(root, f"{folder}_depth", id_ + ".png")
-        Image.fromarray(img).save(save_path)
-
 class COCODataModule():
     """
     DataModule for MSCOCO dataset
@@ -397,9 +271,10 @@ class COCODataModule():
         num_workers (int): Number of workers for dataloader
     """
 
-    def __init__(self, batch_size, train_transform, val_transform, test_transform, dir="/scratch-shared/mscoco_hbird/", num_workers=0) -> None:
+    def __init__(self, batch_size, train_transform, val_transform, test_transform, dir="/scratch-shared/mscoco_hbird/", num_workers=0, task = "normal") -> None:
         self.batch_size = batch_size
         self.dir = dir
+        self.task = task
         self.train_transform = train_transform['img']
         self.val_transform = val_transform['img']
         self.test_transform = test_transform['img']
@@ -408,19 +283,22 @@ class COCODataModule():
 
     def setup(self):
         subset_indices_train = list(range(2000))
-        subset_indices_val  = list(range(250))
-        self.train_dataset = MSCOCODataset(self.dir, split = "train", transform=self.train_transform, shared_transform=self.shared_train_transform, subset_indices=subset_indices_train)
-        self.val_dataset = MSCOCODataset(self.dir, split = "val", transform=self.val_transform, shared_transform=self.shared_train_transform, subset_indices=subset_indices_val)
+        subset_indices_val  = list(range(1000))
+        print("MSCOCO", self.task, "segmentation")
+        self.train_dataset = MSCOCODataset(self.dir, split = "train", transform=self.train_transform, shared_transform=self.shared_train_transform, subset_indices=subset_indices_train, task = self.task)
+        self.val_dataset = MSCOCODataset(self.dir, split = "val", transform=self.val_transform, shared_transform=self.shared_train_transform, subset_indices=subset_indices_val, task = self.task)
         # Test dataset setup can be added here if needed
 
         print(f"Train size: {len(self.train_dataset)}")
         print(f"Val size: {len(self.val_dataset)}")
 
-    def get_train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
+    def get_train_dataloader(self, batch_size=None):
+        batch_size = self.batch_size if batch_size is None else batch_size
+        return DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
     
-    def get_val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True)
+    def get_val_dataloader(self, batch_size=None):
+        batch_size = self.batch_size if batch_size is None else batch_size
+        return DataLoader(self.val_dataset, batch_size=batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True)
     
     # Add a get_test_dataloader method if you have a test dataset
 
@@ -437,7 +315,11 @@ class COCODataModule():
     
     def get_num_classes(self):
         # Return the number of classes in the MSCOCO dataset (commonly 80 for object detection)
-        return 81
+        if self.task == "stuff":
+            return 92
+        elif self.task == "normal":
+            return 80
+        return 80
     
 class NYUv2DataModule():
     """ 
@@ -715,7 +597,7 @@ def test_mscoco_data_module(logger):
     # image_train_transform = trn.Compose([trn.Resize((448, 448)), trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
     # target_train_transform = trn.Compose([trn.Resize((448, 448), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
     train_transforms = {"img": image_train_transform, "target": None, "shared": shared_transform}
-    dataset = COCODataModule(batch_size=1, train_transform=train_transforms, val_transform=train_transforms, test_transform=train_transforms)
+    dataset = COCODataModule(batch_size=1, train_transform=train_transforms, val_transform=train_transforms, test_transform=train_transforms, task = "stuff")
     dataset.setup()
     train_dataloader = dataset.get_train_dataloader()
     val_dataloader = dataset.get_val_dataloader()
@@ -728,7 +610,7 @@ def test_mscoco_data_module(logger):
     # print(f"Test dataloader size : {len(test_dataloader)}")
     for i, (x, y) in enumerate(val_dataloader):
         print(f"Train batch {i} : {x.shape}, {y.shape}")
-        
+        y[y==165] = 0 #For stuff segmentation.
         ## log image
         logger.log({"train_batch": [wandb.Image(x[0]), wandb.Image(y[0])]})
         if i ==10:

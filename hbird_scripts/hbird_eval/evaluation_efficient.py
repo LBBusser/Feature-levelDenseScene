@@ -55,8 +55,8 @@ EXP_NAME = f'{MODEL}_{MEM_SIZE}_{NEIGHBOURS}_{AUG_EPOCHS}'
 # EXP_NAME = 'temp'
 EXP_DIR = os.path.join(DIR, EXP_NAME)
 os.makedirs(EXP_DIR, exist_ok = True) 
-F_MEM = os.path.join(EXP_DIR, 'feature_memory_mscoco.pt')
-L_MEM = os.path.join(EXP_DIR, 'label_memory_mscoco.pt')
+F_MEM = os.path.join(EXP_DIR, 'feature_memory_mscoco_stuff.pt')
+L_MEM = os.path.join(EXP_DIR, 'label_memory_mscoco_stuff.pt')
 
 # ScaNN parameters
 NUM_LEAVES = args.num_leaves
@@ -107,21 +107,26 @@ class HummingbirdEvaluation():
                     print(f"batch {i} has been read at {time.ctime()}")
                     x = x.to(self.device)
                     y = y.to(self.device)
-                    y = (y * 80).long() # in case of MSCOCO
-                    # y = (y * 255).long() #in case of VOC
+                    ###################
+                    #OUTDATED
+                    # y = (y*80) #ms coco segmentation
+                    # y = (y * 255) #pascal voc
+                    ###################
+                    y = y.long()
                     # y[y == 255] = 0
+                    y[y==165] = 0 #for stuff segmentation mscoco
+                    y[y==92]=0
+                    ###################
                     print(f"batch {i} has been moved to {self.device} at {time.ctime()}")
                     features, _ = self.feature_extractor.forward_features(x)
                     print(f"batch {i} sampling process has been started at {time.ctime()}")
                     input_size = x.shape[-1]
                     patch_size = input_size // eval_spatial_resolution
                     patchified_gts = self.patchify_gt(y, patch_size) ## (bs, spatial_resolution, spatial_resolution, c*patch_size*patch_size)
-                    
                     num_classes = self.dataset_module.get_num_classes()
-                   
                     one_hot_patch_gt = F.one_hot(patchified_gts, num_classes=num_classes).float()  
-                    
-                    label = one_hot_patch_gt.mean(dim=3)   
+                    label = one_hot_patch_gt.mean(dim=3) 
+             
                     sampled_features, sampled_indices = self.sample_features(features, patchified_gts)  
                     normalized_sampled_features = sampled_features / torch.norm(sampled_features, dim=1, keepdim=True)
                     # self.overlay_sampled_locations_on_gt(y, sampled_indices)
@@ -285,9 +290,13 @@ class HummingbirdEvaluation():
         key_labels = key_labels.reshape(bs, num_patches, self.num_neighbour, -1)
         return key_features, key_labels
 
+
+
     def incontext_evaluation(self, max_i=10):
         print("incontext evaluation has started")
-        metric = PredsmIoU(21, 21)
+        #######################
+        metric = PredsmIoU(92, 92) # num classes for the dataset 21 for VOC and 81 for MSCOCO and 91 for MSCOCO stuff
+        #######################
         val_loader = self.dataset_module.get_val_dataloader(batch_size=4)
         eval_spatial_resolution = self.feature_extractor.eval_spatial_resolution
         self.feature_extractor = self.feature_extractor.to(MODEL_DEVICE)
@@ -301,8 +310,10 @@ class HummingbirdEvaluation():
                 features, _ = self.feature_extractor.forward_features(x.to(MODEL_DEVICE))
                 features = features.to(self.device)
                 y = y.to(self.device)
-                y = (y*80).long()
-                # y = (y * 255).long()
+                ###################
+                # y = (y*80).long() #ms coco segmentation
+                # y = (y * 255).long() #pascal voc
+                ###################
                 ## copy the data of features to another variable
                 q = features.clone()
                 q = q.detach().cpu().numpy()
@@ -317,7 +328,10 @@ class HummingbirdEvaluation():
             try:
                 lables = torch.cat(lables) 
                 label_hats = torch.cat(label_hats)
-                valid_idx = lables != 255
+                ########################
+                # valid_idx = lables != 255 #for pascal voc
+                valid_idx = lables != 165 #for stuff segmentation mscoco
+                ########################
                 valid_target = lables[valid_idx]
                 valid_cluster_maps = label_hats[valid_idx]
                 metric.update(valid_target, valid_cluster_maps)
@@ -332,8 +346,8 @@ class HummingbirdEvaluation():
                 pass
                 
 
-            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths.pt'))
-            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions.pt'))
+            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths_mscoco_stuff.pt'))
+            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions_mscoco_stuff.pt'))
     
 
 if __name__ == "__main__":
@@ -356,6 +370,7 @@ if __name__ == "__main__":
         
     ########################
     used_dataset = "MSCOCO"
+    task = "stuff"
     ########################
 
     # vit_model.get_intermediate_layers(torch.randn(1, 3, 512, 512))
@@ -428,7 +443,7 @@ if __name__ == "__main__":
     train_transforms = {"img": image_train_transform, "target": None, "shared": shared_train_transform}
     val_transforms = {"img": image_val_transform, "target": None , "shared": shared_val_transform}
     if used_dataset == "MSCOCO":
-        dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms)
+            dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms, task=task)
     else:
         dataset = PascalVOCDataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms)
     dataset.setup()
@@ -438,3 +453,4 @@ if __name__ == "__main__":
         evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device)
     
     evaluator.incontext_evaluation()
+#7.5 * 32 * 2 = 480/60 = 8 hours
