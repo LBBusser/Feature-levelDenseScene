@@ -28,7 +28,7 @@ def get_args_parser(add_help: bool = True):
     parser.add_argument("--model_type", default='dinov2',choices = ['dino', 'dinov2'], type=str, help="Model type")
     parser.add_argument("--device", default='cuda', type=str, help="Device", required=False)
     parser.add_argument("--model-device", default='cuda', type=str, help="Device", required=False)
-    parser.add_argument("--num-clusters", default=2000, type=int, help="Number of clusters", required=False)
+    parser.add_argument("--num-clusters", default=1000, type=int, help="Number of clusters", required=False)
     return parser
 
 args = get_args_parser(add_help=True).parse_args()
@@ -56,15 +56,16 @@ class HummingbirdClustering():
         self.feature_extractor = feature_extractor.to(self.device)
         self.d_model = self.feature_extractor.d_model
         self.num_components = num_components
-        self.kmeans = faiss.Kmeans(self.num_components, 128, niter=20, verbose=True)
+        self.kmeans = faiss.Kmeans(self.num_components, self.num_clusters, niter=20, verbose=True)
         self.cluster_assignments = {} #Key: image name, Value: cluster id
-        self.online_cluster(num_cluster_targets=self.num_clusters)
+        self.online_cluster()
       
 
-    def online_cluster(self, num_cluster_targets = 2000, increment = 128):
+    def online_cluster(self, interval = 50):
         train_loader = self.dataset_module.get_train_dataloader()
-        eval_spatial_resolution = self.feature_extractor.eval_spatial_resolution
+        all_features_accumulated = []
         all_image_paths = []
+        batch_counter = 0
         with torch.no_grad():
                 for i, (x, y, img_names) in enumerate(tqdm(train_loader)):
                     print(f"batch {i} has been read at {time.ctime()}")
@@ -73,48 +74,44 @@ class HummingbirdClustering():
                     x = x.to(self.device)
                     y = y.to(self.device)
                     y = y.long()
-                    if i == 0:
-                        features, _ = self.feature_extractor.forward_features(x) #features shape is [bs, num_patches_flattened, d_model]
-                        flattened_features= features.reshape(bs,-1).detach().cpu()
-                        flattened_features = flattened_features.numpy()
-                        pca = PCA(n_components=self.num_components)
-                        reduced_features = pca.fit_transform(flattened_features)
-                        self.kmeans = self.initial_clustering(reduced_features)
-                        _, new_assignments = self.kmeans.index.search(reduced_features.astype('float32', order='C'), 1)
-                        self.cluster_assignments.update(zip(all_image_paths, new_assignments.flatten()))
-                    else:
-                        features, _ = self.feature_extractor.forward_features(x)
-                        flattened_features= features.reshape(bs,-1).detach().cpu()
-                        flattened_features = flattened_features.numpy()
-                        pca = PCA(n_components=self.num_components)
-                        reduced_features = pca.fit_transform(flattened_features)
-                        self.kmeans = self.incremental_clustering(self.kmeans, reduced_features, num_cluster_targets, increment)
-                        _, new_assignments = self.kmeans.index.search(reduced_features.astype('float32', order='C'), 1)
+                    features, _ = self.feature_extractor.forward_features(x) #features shape is [bs, num_patches_flattened, d_model]
+                    flattened_features= features.reshape(bs,-1).detach().cpu()
+                    flattened_features = flattened_features.numpy()
+                    pca = PCA(n_components=self.num_components)
+                    reduced_features = pca.fit_transform(flattened_features)
+                    all_features_accumulated.extend(reduced_features)
+                    batch_counter += 1
+                    if batch_counter % interval == 0 or i == len(train_loader):
+                        print(f"starting interval clustering at {time.ctime()} for batches {i-interval} to {i}")
+                        if batch_counter == interval:
+                            self.kmeans = self.initial_clustering(all_features_accumulated)
+                        else:
+                            self.kemans = self.incremental_clustering(self.kmeans, all_features_accumulated)
+
+                        _, new_assignments = self.kmeans.index.search(all_features_accumulated, 1)
                         self.cluster_assignments.update(zip(all_image_paths, new_assignments.flatten()))
                         self.save_cluster_assignments_incrementally(self.cluster_assignments, os.path.join(EXP_DIR, 'cluster_assignments.pkl'))
+                        all_features_accumulated = []
+                    print(self.cluster_assignments)
+                    print("Length of cluster_assignments:",len(self.cluster_assignments))
                     print(f"batch {i} has been processed at {time.ctime()}")
         
 
 
-    def initial_clustering(self, reduced_features):
+    def initial_clustering(self, features):
         print("initial clustering has started")
-        self.kmeans.train(reduced_features.astype('float32', order='C'))
+        self.kmeans.train(np.array(features).astype('float16'))
         return self.kmeans
                     
 
-    def incremental_clustering(self, kmeans, data, num_clusters_target, increment):
+    def incremental_clustering(self, kmeans, features):
         num_clusters_current = kmeans.k
-        if num_clusters_current < num_clusters_target:
-            # Increment the number of clusters
-            num_clusters_current += increment
-            if num_clusters_current > num_clusters_target:
-                num_clusters_current = num_clusters_target
         print('Incremental clustering with {} clusters'.format(num_clusters_current))
-        # Combine existing centroids with new data
-        combined_data = np.vstack([kmeans.centroids, data.astype('float32')])
+            # Combine existing centroids with new data
+        combined_data = np.vstack([kmeans.centroids, np.array(features).astype('float16')])
         
         # Re-cluster with the new number of clusters
-        new_kmeans = faiss.Kmeans(data.shape[1], num_clusters_current, niter=20, verbose=True)
+        new_kmeans = faiss.Kmeans(self.num_components, num_clusters_current, niter=50, verbose=True)
         new_kmeans.train(combined_data)
         
         # Update the kmeans object and centroids for the next iteration
@@ -123,12 +120,12 @@ class HummingbirdClustering():
         return self.kmeans
     
     def save_cluster_assignments_incrementally(self, cluster_assignments, filename):
-        # This function saves the cluster assignments to a CSV file incrementally
+        # This function saves the cluster assignments to a pickle file incrementally
         print('Saving cluster assignments to {}'.format(filename))
         with open(filename, 'wb') as file:
             pickle.dump(cluster_assignments, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def load_cluster_assignments(filename='cluster_assignments.pkl'):
+    def load_cluster_assignments(filename='/home/lbusser/hbird_scripts/hbird_eval/data/dinov2_vitb14_cluster_results/cluster_assignments.pkl'):
         with open(filename, 'rb') as file:
             return pickle.load(file)
 
