@@ -109,16 +109,16 @@ class HummingbirdClustering():
             num_clusters_current += increment
             if num_clusters_current > num_clusters_target:
                 num_clusters_current = num_clusters_target
-            print('Incremental clustering with {} clusters'.format(num_clusters_current))
-            # Combine existing centroids with new data
-            combined_data = np.vstack([kmeans.centroids, data.astype('float32')])
-            
-            # Re-cluster with the new number of clusters
-            new_kmeans = faiss.Kmeans(data.shape[1], num_clusters_current, niter=20, verbose=True)
-            new_kmeans.train(combined_data)
-            
-            # Update the kmeans object and centroids for the next iteration
-            self.kmeans = new_kmeans
+        print('Incremental clustering with {} clusters'.format(num_clusters_current))
+        # Combine existing centroids with new data
+        combined_data = np.vstack([kmeans.centroids, data.astype('float32')])
+        
+        # Re-cluster with the new number of clusters
+        new_kmeans = faiss.Kmeans(data.shape[1], num_clusters_current, niter=20, verbose=True)
+        new_kmeans.train(combined_data)
+        
+        # Update the kmeans object and centroids for the next iteration
+        self.kmeans = new_kmeans
 
         return self.kmeans
     
