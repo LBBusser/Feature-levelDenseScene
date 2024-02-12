@@ -56,16 +56,14 @@ class HummingbirdClustering():
         self.feature_extractor = feature_extractor.to(self.device)
         self.d_model = self.feature_extractor.d_model
         self.num_components = num_components
-        self.kmeans = faiss.Kmeans(self.num_components, self.num_clusters, niter=20, verbose=True)
         self.cluster_assignments = {} #Key: image name, Value: cluster id
-        self.online_cluster()
+        self.accumulate_features()
       
 
-    def online_cluster(self, interval = 50):
+    def accumulate_features(self):
         train_loader = self.dataset_module.get_train_dataloader()
         all_features_accumulated = []
         all_image_paths = []
-        batch_counter = 0
         with torch.no_grad():
                 for i, (x, y, img_names) in enumerate(tqdm(train_loader)):
                     print(f"batch {i} has been read at {time.ctime()}")
@@ -80,46 +78,32 @@ class HummingbirdClustering():
                     pca = PCA(n_components=self.num_components)
                     reduced_features = pca.fit_transform(flattened_features)
                     all_features_accumulated.extend(reduced_features)
-                    batch_counter += 1
-                    if batch_counter % interval == 0 or i == len(train_loader):
-                        print(f"starting interval clustering at {time.ctime()} for batches {i-interval} to {i}")
-                        if batch_counter == interval:
-                            self.kmeans = self.initial_clustering(all_features_accumulated)
-                        else:
-                            self.kemans = self.incremental_clustering(self.kmeans, all_features_accumulated)
-
-                        _, new_assignments = self.kmeans.index.search(all_features_accumulated, 1)
-                        self.cluster_assignments.update(zip(all_image_paths, new_assignments.flatten()))
-                        self.save_cluster_assignments_incrementally(self.cluster_assignments, os.path.join(EXP_DIR, 'cluster_assignments.pkl'))
-                        all_features_accumulated = []
-                    print(self.cluster_assignments)
-                    print("Length of cluster_assignments:",len(self.cluster_assignments))
                     print(f"batch {i} has been processed at {time.ctime()}")
-        
-
-
-    def initial_clustering(self, features):
-        print("initial clustering has started")
-        self.kmeans.train(np.array(features).astype('float16'))
-        return self.kmeans
                     
-
-    def incremental_clustering(self, kmeans, features):
-        num_clusters_current = kmeans.k
-        print('Incremental clustering with {} clusters'.format(num_clusters_current))
-            # Combine existing centroids with new data
-        combined_data = np.vstack([kmeans.centroids, np.array(features).astype('float16')])
+        self.save_features(all_features_accumulated, os.path.join(EXP_DIR, 'features.pkl'))
+        _, I = self.clustering(np.array(all_features_accumulated))
+        cluster_assignments = {all_image_paths[i]: int(I[i][0]) for i in range(len(all_image_paths))}
+        self.save_cluster_assignments(cluster_assignments, os.path.join(EXP_DIR, 'cluster_assignments.pkl'))
         
-        # Re-cluster with the new number of clusters
-        new_kmeans = faiss.Kmeans(self.num_components, num_clusters_current, niter=50, verbose=True)
-        new_kmeans.train(combined_data)
-        
-        # Update the kmeans object and centroids for the next iteration
-        self.kmeans = new_kmeans
+    def clustering(self, features):
+        d = features.shape[1]  # Dimension of the features
+        index = faiss.IndexFlatL2(d)
+        cluster = faiss.Clustering(d, self.num_clusters)
+        cluster.verbose = True
+        cluster.niter = 20
+        print("clustering has started")
+        cluster.train(features, index)
+        _, I = index.search(features, 1) 
+        faiss.write_index(index, os.path.join(EXP_DIR, 'cluster_index.index'))
+        return cluster, I
 
-        return self.kmeans
+    def save_features(self, features, filename):
+        # This function saves the cluster assignments to a pickle file incrementally
+        print('Saving features to {}'.format(filename))
+        with open(filename, 'wb') as file:
+            pickle.dump(features, file, protocol=pickle.HIGHEST_PROTOCOL)  
     
-    def save_cluster_assignments_incrementally(self, cluster_assignments, filename):
+    def save_cluster_assignments(self, cluster_assignments, filename):
         # This function saves the cluster assignments to a pickle file incrementally
         print('Saving cluster assignments to {}'.format(filename))
         with open(filename, 'wb') as file:
