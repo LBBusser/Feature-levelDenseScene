@@ -4,7 +4,6 @@ import numpy as np
 from skimage.measure import label
 from torchvision.transforms import GaussianBlur
 from typing import List
-from IPython.display import display, display_markdown
 import io
 import os, sys
 import requests
@@ -97,7 +96,11 @@ def cosine_scheduler(base_value: float, final_value: float, max_iters: int):
     schedule = final_value + 0.5 * (base_value - final_value) * (1 + np.cos(np.pi * iters / len(iters)))
     return schedule
 
-
+def set_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    else:
+        return "cpu"
 def denormalize_video(video):
     """
     video: [1, nf, c, h, w]

@@ -18,7 +18,7 @@ def random_resize_crop(image, target, size=(256, 256), scale=(0.08, 1.0), ratio=
 def resize(image, target, size=(256, 256)):
     ## convert target to tensor
     if not isinstance(target, torch.Tensor):
-        target = transforms.ToTensor()(target)
+        target = transforms.PILToTensor()(target)
     image = F.resize(image, size, interpolation=Image.BILINEAR)
     target = F.resize(target, size, interpolation=Image.NEAREST)
     return image, target

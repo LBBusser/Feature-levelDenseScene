@@ -54,8 +54,9 @@ class FeatureExtractorBeta(torch.nn.Module):
             # In case of dinov2 or simimilar models
             features_dict = self.model.forward_features(imgs)
             features = features_dict['x_norm_patchtokens']
+            cls_features = features_dict['x_norm_clstoken']
             normalized_cls_attention = None
-            return features, normalized_cls_attention
+            return features, cls_features, normalized_cls_attention
 
         def ff4(self, imgs, feat="k"):
             # In case of dinov2 or simimilar models
@@ -84,8 +85,9 @@ class FeatureExtractorBeta(torch.nn.Module):
                 pass
             try:
                 self.model = self.model.cuda()
-                fts, att = ff3(self, ps_imgs.cuda())
+                fts, cls_fts, att = ff3(self, ps_imgs.cuda())
                 self.forward_features = funcType(ff3, self)
+                print("Successfully set the forward_features function to ff3")
                 return
             except Exception as e:
                 pass

@@ -19,7 +19,7 @@ from tqdm import tqdm
 import argparse
 
 def get_args_parser(add_help: bool = True):
-    parser = argparse.ArgumentParser("Hummingbird Evaluation - Pascal VOC", add_help=add_help)
+    parser = argparse.ArgumentParser("Hummingbird Evaluation - NYUv2", add_help=add_help)
     parser.add_argument("--mem_size", default=10240000, type=int, help="Size of the memory")
     parser.add_argument("--neighbors", default=30, type=int, help="Number of neighbours")
     parser.add_argument("--patch_size", default=14, type=int, help="Patch size", choices=[14, 16])
@@ -105,14 +105,12 @@ class HummingbirdEvaluation():
         with torch.no_grad():
             for j in range(self.augmentation_epoch):
                 print(f"augmentation epoch {j} has started at {time.ctime()}")
-                for i, (x, y) in enumerate(tqdm(train_loader)):
+                for i, (x, y,_) in enumerate(tqdm(train_loader)):
                     print(f"batch {i} has been read at {time.ctime()}")
                     x = x.to(self.device)
                     y = y.to(self.device) 
-                    print(x.shape)
-                    print(y.shape)
                     print(f"batch {i} has been moved to {self.device} at {time.ctime()}")
-                    features, _ = self.feature_extractor.forward_features(x)
+                    features, _,_ = self.feature_extractor.forward_features(x)
                     print(f"batch {i} sampling process has been started at {time.ctime()}")
                     input_size = x.shape[-1]
                     patch_size = input_size // eval_spatial_resolution
@@ -124,9 +122,7 @@ class HummingbirdEvaluation():
                     label = label.flatten(1, 2) ## (bs, spatial_resolution*spatial_resolution, num_classes)
                     ## select the labels of the sampled features
                     sampled_indices = sampled_indices.to(self.device) 
-                    
                     label_hat = label.gather(1, sampled_indices)
-                  
                     # label_hat = label.gather(1, sampled_indices)
                     normalized_sampled_features = normalized_sampled_features.flatten(0, 1) 
                     label_hat = label_hat.flatten(0, 1)
@@ -163,9 +159,9 @@ class HummingbirdEvaluation():
         for k, gt in enumerate(tqdm(patchified_gts)): #loop over elements in batch
             num_patches = gt.shape[0] * gt.shape[1]  # 36 * 36
             patch_indices = torch.arange(num_patches)
-       
             shuffled_indices = patch_indices[torch.randperm(num_patches)]
             selected_indices = shuffled_indices[:self.num_sampled_features]
+            print(selected_indices)
             sampled_indices.append(selected_indices)
             feature = features[k] 
             samples = feature[selected_indices] 
@@ -265,11 +261,11 @@ class HummingbirdEvaluation():
         label_hats = []
         lables = []
         with torch.no_grad():
-            for i, (x, y) in enumerate(val_loader):
+            for i, (x, y,_) in enumerate(val_loader):
                 print(f"batch {i} has been read at {time.ctime()}")
                 x = x.to(self.device)
                 _, _, h, w = x.shape
-                features, _ = self.feature_extractor.forward_features(x.to(MODEL_DEVICE))
+                features, _,_ = self.feature_extractor.forward_features(x.to(MODEL_DEVICE))
                 features = features.to(self.device)
                 y = y.to(self.device)
                 ## copy the data of features to another variable
@@ -280,7 +276,6 @@ class HummingbirdEvaluation():
                 bs, _, label_dim = label_hat.shape
                 label_hat = label_hat.reshape(bs, eval_spatial_resolution, eval_spatial_resolution, label_dim).permute(0, 3, 1, 2) #[bs, label_dim, eval_spatial_resolution, eval_spatial_resolution]
                 resized_label_hats =  F.interpolate(label_hat.float(), size=(h, w), mode="bilinear")
-
                 label_hats.append(resized_label_hats.detach().cpu())
                 lables.append(y.detach().cpu())
             try:
@@ -308,8 +303,8 @@ class HummingbirdEvaluation():
                 pass
             
 
-            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths_fixed.pt'))
-            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions_fixed.pt'))
+            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths_4vis.pt'))
+            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions_4vis.pt'))
     
 
 if __name__ == "__main__":
@@ -325,33 +320,6 @@ if __name__ == "__main__":
         eval_spatial_resolution = input_size // 16
         vit_model = torch.hub.load('facebookresearch/dino:main', MODEL)
     
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
-
-
-    # vit_model.get_intermediate_layers(torch.randn(1, 3, 512, 512))
-    # supervised_vit = timm.create_model("vit_small_patch16_224", pretrained=True)
-    ## load the weights of supervised vit to dino
-    # supervised_vit_state_dict = supervised_vit.state_dict()
-    # vit_model_state_dict = vit_model.state_dict()
-    # for k, v in supervised_vit_state_dict.items():
-        # if k in vit_model_state_dict:
-            # vit_model_state_dict[k] = v
-    # msg = vit_model.load_state_dict(vit_model_state_dict)
-    # path_to_checkpoint = "models/TimeT-b16.pth"
-    # vit_model = vit_small_patch16_224()  # or vit_base_patch8_224() if you want to use our larger model
-    # state_dict = torch.load(path_to_checkpoint)
-    # new_state_dict = {}
-    # for k, v in state_dict["student"].items():
-    #     if k.split(".")[1] == "backbone":
-    #         new_state_dict[".".join(k.split(".")[2:])] = v
-    #         # {".".join(k.split(".")[2:]): v}
-    
-    # msg = vit_model.load_state_dict(new_state_dict, strict=False)
-    # msg = vit_model.load_state_dict({".".join(k.split(".")[2:]): v for k, v in state_dict.items()}, strict=False)
-    # print(msg)
     if arch == 'vitg':
         feature_extractor = FeatureExtractor(vit_model, eval_spatial_resolution=eval_spatial_resolution, d_model=1536)
     elif arch == 'vitl':
@@ -380,10 +348,10 @@ if __name__ == "__main__":
 
     # Create the transformation
     image_train_transform = trn.Compose([
-        # trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-        # trn.RandomApply([transforms.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-        # trn.RandomApply([transforms.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-        # trn.RandomApply([transforms.ColorJitter(hue=hue_jitter_probability)], p=hue_jitter_probability),
+        trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
+        trn.RandomApply([transforms.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
+        trn.RandomApply([transforms.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
+        trn.RandomApply([transforms.ColorJitter(hue=hue_jitter_probability)], p=hue_jitter_probability),
         trn.ToTensor(),
         trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])
     ])
@@ -398,11 +366,9 @@ if __name__ == "__main__":
         Resize(size=(input_size, input_size)),
     ])
     # target_train_transform = trn.Compose([trn.Resize((224, 224), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
-    train_transforms = {"img": image_train_transform, "target": None, "shared": shared_train_transform}
-    val_transforms = {"img": image_val_transform, "target": None , "shared": shared_val_transform}
-    dataset = NYUv2DataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms)
+    train_transforms = {"train": image_train_transform, "shared": shared_train_transform}
+    val_transforms = {"val": image_val_transform , "shared": shared_val_transform}
+    dataset = NYUv2DataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms)
     dataset.setup()
-    evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device, evaluation_only = eval_only)
-
-    
+    evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device, evaluation_only = eval_only)    
     evaluator.incontext_evaluation()

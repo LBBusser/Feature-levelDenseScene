@@ -24,7 +24,7 @@ def get_args_parser(add_help: bool = True):
     parser.add_argument("--neighbors", default=30, type=int, help="Number of neighbours")
     parser.add_argument("--patch_size", default=14, type=int, help="Patch size", choices=[14, 16])
     parser.add_argument("--arch", default='vitb', type=str, help="Architecture", choices=['vitg', 'vitl', 'vitb', 'vits'])
-    parser.add_argument("--aug_epochs", default=2, type=int, help="Augmentation epochs")
+    parser.add_argument("--aug_epochs", default=1, type=int, help="Augmentation epochs")
     parser.add_argument("--model_type", default='dinov2',choices = ['dino', 'dinov2'], type=str, help="Model type")
     parser.add_argument("--device", default='cuda', type=str, help="Device", required=False)
     parser.add_argument("--model-device", default='cuda', type=str, help="Device", required=False)
@@ -55,8 +55,8 @@ EXP_NAME = f'{MODEL}_{MEM_SIZE}_{NEIGHBOURS}_{AUG_EPOCHS}'
 # EXP_NAME = 'temp'
 EXP_DIR = os.path.join(DIR, EXP_NAME)
 os.makedirs(EXP_DIR, exist_ok = True) 
-F_MEM = os.path.join(EXP_DIR, 'feature_memory_mscoco.pt')
-L_MEM = os.path.join(EXP_DIR, 'label_memory_mscoco.pt')
+F_MEM = os.path.join(EXP_DIR, 'feature_memory_mscoco_baseline.pt')
+L_MEM = os.path.join(EXP_DIR, 'label_memory_mscoco_baseline.pt')
 
 # ScaNN parameters
 NUM_LEAVES = args.num_leaves
@@ -79,7 +79,7 @@ class HummingbirdEvaluation():
             self.load_memory()
         else:
             self.feature_memory = torch.zeros((self.memory_size, self.feature_extractor.d_model))
-            self.label_memory = torch.zeros((self.memory_size, self.dataset_module.get_num_classes()))
+            self.label_memory = torch.zeros((self.memory_size, self.dataset_module.get_num_classes()+1))
             self.create_memory()
             self.feature_memory = self.feature_memory.to(self.device)
             self.label_memory = self.label_memory.to(self.device)
@@ -103,21 +103,21 @@ class HummingbirdEvaluation():
         with torch.no_grad():
             for j in range(self.augmentation_epoch):
                 print(f"augmentation epoch {j} has started at {time.ctime()}")
-                for i, (x, y) in enumerate(tqdm(train_loader)):
+                for i, (x, y,_) in enumerate(tqdm(train_loader)):
                     print(f"batch {i} has been read at {time.ctime()}")
                     x = x.to(self.device)
                     y = y.to(self.device)
-                    y = (y * 80).long() # in case of MSCOCO
+                    y = y.long()
+                    # y = (y * 80).long() # in case of MSCOCO
                     # y = (y * 255).long() #in case of VOC
                     # y[y == 255] = 0
-                    print(f"batch {i} has been moved to {self.device} at {time.ctime()}")
-                    features, _ = self.feature_extractor.forward_features(x)
-                    print(f"batch {i} sampling process has been started at {time.ctime()}")
+                    # print(f"batch {i} has been moved to {self.device} at {time.ctime()}")
+                    features, _,_ = self.feature_extractor.forward_features(x)
+                    # print(f"batch {i} sampling process has been started at {time.ctime()}")
                     input_size = x.shape[-1]
                     patch_size = input_size // eval_spatial_resolution
                     patchified_gts = self.patchify_gt(y, patch_size) ## (bs, spatial_resolution, spatial_resolution, c*patch_size*patch_size)
-                    
-                    num_classes = self.dataset_module.get_num_classes()
+                    num_classes = self.dataset_module.get_num_classes() + 1
                    
                     one_hot_patch_gt = F.one_hot(patchified_gts, num_classes=num_classes).float()  
                     
@@ -168,7 +168,6 @@ class HummingbirdEvaluation():
             class_frequency = self.get_class_frequency(gt)
             patch_scores = self.get_patch_scores(gt, class_frequency)
             patch_scores = patch_scores.flatten()
-            print(patch_scores)
             zero_score_idx = torch.where(patch_scores == 0)
             # assert zero_score_idx[0].size(0) != 0 ## for pascal every patch should belong to one class
             none_zero_score_idx = torch.where(patch_scores != 0)
@@ -287,21 +286,21 @@ class HummingbirdEvaluation():
 
     def incontext_evaluation(self, max_i=10):
         print("incontext evaluation has started")
-        metric = PredsmIoU(21, 21)
+        metric = PredsmIoU(81, 81)
         val_loader = self.dataset_module.get_val_dataloader(batch_size=4)
         eval_spatial_resolution = self.feature_extractor.eval_spatial_resolution
         self.feature_extractor = self.feature_extractor.to(MODEL_DEVICE)
         label_hats = []
         lables = []
         with torch.no_grad():
-            for i, (x, y) in enumerate(val_loader):
+            for i, (x, y,_) in enumerate(tqdm(val_loader)):
                 print(f"batch {i} has been read at {time.ctime()}")
                 x = x.to(self.device)
                 _, _, h, w = x.shape
-                features, _ = self.feature_extractor.forward_features(x.to(MODEL_DEVICE))
+                features, _ ,_ = self.feature_extractor.forward_features(x.to(MODEL_DEVICE))
                 features = features.to(self.device)
                 y = y.to(self.device)
-                y = (y*80).long()
+                # y = (y*80).long()
                 # y = (y * 255).long()
                 ## copy the data of features to another variable
                 q = features.clone()
@@ -332,8 +331,8 @@ class HummingbirdEvaluation():
                 pass
                 
 
-            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths.pt'))
-            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions.pt'))
+            torch.save(lables, os.path.join(EXP_DIR, 'ground_truths_4vis.pt'))
+            torch.save(label_hats, os.path.join(EXP_DIR, 'predictions_4vis.pt'))
     
 
 if __name__ == "__main__":
@@ -420,21 +419,20 @@ if __name__ == "__main__":
         # RandomHorizontalFlip(probability=0.1),
     ])
 
-    image_val_transform = trn.Compose([trn.Resize((input_size, input_size)), trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
+    image_val_transform = trn.Compose([trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
     shared_val_transform = Compose([
         Resize(size=(input_size, input_size)),
     ])
     # target_train_transform = trn.Compose([trn.Resize((224, 224), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
-    train_transforms = {"img": image_train_transform, "target": None, "shared": shared_train_transform}
-    val_transforms = {"img": image_val_transform, "target": None , "shared": shared_val_transform}
+    train_transforms = {"train": image_train_transform, "target": None, "shared": shared_train_transform}
+    val_transforms = {"val": image_val_transform, "target": None , "shared": shared_val_transform}
     if used_dataset == "MSCOCO":
-        dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms)
+        dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms)
     else:
         dataset = PascalVOCDataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, test_transform=val_transforms)
     dataset.setup()
-    if eval_only:
-        evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device, evaluation_only = True)
-    else:
-        evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device)
+
+    evaluator = HummingbirdEvaluation(feature_extractor, dataset, num_neighbour=NEIGHBOURS, augmentation_epoch=AUG_EPOCHS, memory_size=MEM_SIZE, device=device, evaluation_only = eval_only)
+
     
     evaluator.incontext_evaluation()
