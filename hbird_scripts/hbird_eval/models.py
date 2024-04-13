@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import timm
+import numpy as np
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 # from mmcv.cnn import ConvModule
@@ -21,11 +22,11 @@ class BaseFeatureExtractor(torch.nn.Module, abc.ABC):
         raise NotImplementedError
 
 class FeatureExtractorBeta(torch.nn.Module):
-    def __init__(self, vit_model, eval_spatial_resolution=14, d_model=768):
+    def __init__(self, vit_model, eval_spatial_resolution=14, d_model=1024):
         super().__init__()
         self.model = vit_model
         self.eval_spatial_resolution = eval_spatial_resolution
-        self.d_model = d_model
+        self.d_model = d_model #USELESS
         self.define_forward_features()
 
     def define_forward_features(self):
@@ -531,6 +532,7 @@ class CrossAttentionBlock(nn.Module):
         x = self.norm2(x)
 
         return x
+
 
 
 

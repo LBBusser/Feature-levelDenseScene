@@ -19,8 +19,8 @@ def resize(image, target, size=(256, 256)):
     ## convert target to tensor
     if not isinstance(target, torch.Tensor):
         target = transforms.PILToTensor()(target)
-    image = F.resize(image, size, interpolation=Image.BILINEAR)
-    target = F.resize(target, size, interpolation=Image.NEAREST)
+    image = F.resize(image, size, interpolation=Image.BILINEAR, antialias=True)
+    target = F.resize(target, size, interpolation=Image.NEAREST, antialias=True)
     return image, target
 
 

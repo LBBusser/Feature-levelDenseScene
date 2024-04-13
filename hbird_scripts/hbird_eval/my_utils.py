@@ -136,7 +136,14 @@ def overlay_video_cmap(cluster_maps, denormalized_video):
     overlayed = torch.stack(overlayed)
     return cluster_maps,overlayed
 
-
+def write_data_to_txt(file_path, data):
+    if path.exists(file_path):
+        with open(file_path, 'a', newline='') as file:
+            file.write(data)
+    else:  # Create the file
+        with open(file_path, 'w') as file:
+            file.write(data)
+            
 def make_seg_maps(data, cluster_map, logging_directory, name, w_featmap=28, h_featmap=28):
     bs, fs, c, h, w = data.shape
     # cluster_map = torch.Tensor(cluster_map.reshape(bs, fs, w_featmap, h_featmap))

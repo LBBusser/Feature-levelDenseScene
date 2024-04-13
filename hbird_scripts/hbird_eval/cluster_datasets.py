@@ -31,6 +31,7 @@ def get_args_parser(add_help: bool = True):
     parser.add_argument("--model-device", default='cuda', type=str, help="Device", required=False)
     parser.add_argument("--num-clusters", default=1000, type=int, help="Number of clusters", required=False)
     parser.add_argument("--dataset", default='MSCOCO', type=str, help="Dataset to cluster", required=False)
+    parser.add_argument("--mode", default='train', type=str, help="Mode", required=False)
     return parser
 
 args = get_args_parser(add_help=True).parse_args()
@@ -43,7 +44,7 @@ DATASET = args.dataset
 MODEL_DEVICE = args.model_device
 MODEL = f'{MODEL_TYPE}_{arch}{patch_size}'
 DIR = '/home/lbusser/hbird_scripts/hbird_eval/data'
-EXP_NAME = f'{DATASET}_{MODEL}_{CLUSTERS}_cluster_results'
+EXP_NAME = f'{DATASET}_{MODEL}_{CLUSTERS}_cluster_results/'
 
 EXP_DIR = os.path.join(DIR, EXP_NAME)
 os.makedirs(EXP_DIR, exist_ok = True) 
@@ -62,22 +63,26 @@ class HummingbirdClustering():
        
         self.cluster_assignments = {} #Key: image name, Value: cluster id
         self.all_image_paths = []
-        self.train_loader = self.dataset_module.get_train_dataloader()
+        if args.mode == 'train':
+            self.loader = self.dataset_module.get_train_dataloader()
+        elif args.mode == 'test':
+            self.loader = self.dataset_module.get_val_dataloader()
         print("CLUSTERING WITH CLUSTERS:", self.num_clusters)
-        # self.accumulate_features()
+        print("On", args.mode, "set")
+        self.accumulate_features()
 
 
         #####IF FEATURES ALREADY COLLECTED######  
-        all_features_accumulated = self.load_features()
-        self.all_image_paths, all_features_list = zip(*all_features_accumulated.items())
-        _, I = self.clustering(np.array(all_features_list))
-        cluster_assignments = {self.all_image_paths[i]: int(I[i][0]) for i in range(len(self.all_image_paths))}
-        self.save_cluster_assignments(cluster_assignments, os.path.join(EXP_DIR, 'cluster_assignments.pkl'))
+        # all_features_accumulated = self.load_features()
+        # self.all_image_paths, all_features_list = zip(*all_features_accumulated.items())
+        # _, I = self.clustering(np.array(all_features_list))
+        # cluster_assignments = {self.all_image_paths[i]: int(I[i][0]) for i in range(len(self.all_image_paths))}
+        # self.save_cluster_assignments(cluster_assignments, os.path.join(EXP_DIR, 'cluster_assignments.pkl'))
 
     def accumulate_features(self):
         all_features_accumulated = []
         with torch.no_grad():
-                for i, (x, _, img_names) in enumerate(tqdm(self.train_loader)):
+                for i, (x, _, img_names) in enumerate(tqdm(self.loader)):
                     # print(f"batch {i} has been read at {time.ctime()}")
                     self.all_image_paths.extend(img_names)
                     x = x.to(self.device)
@@ -112,7 +117,7 @@ class HummingbirdClustering():
         with open(filename, 'wb') as file:
             pickle.dump(features, file, protocol=pickle.HIGHEST_PROTOCOL)  
     
-    def load_features(self, filename=f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_1000_cluster_results/features_dict.pkl'):
+    def load_features(self, filename=f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_{CLUSTERS}_cluster_results/features_dict.pkl'):
         with open(filename, 'rb') as file:
             return pickle.load(file)
         
@@ -122,7 +127,7 @@ class HummingbirdClustering():
         with open(filename, 'wb') as file:
             pickle.dump(cluster_assignments, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def load_cluster_assignments(filename='/home/lbusser/hbird_scripts/hbird_eval/data/dinov2_vitb14_1000_cluster_results/cluster_assignments.pkl'):
+    def load_cluster_assignments(filename=f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_assignments.pkl'):
         with open(filename, 'rb') as file:
             return pickle.load(file)
         
@@ -157,9 +162,6 @@ if __name__ == "__main__":
     elif arch == 'vits':
         feature_extractor = FeatureExtractor(vit_model, eval_spatial_resolution=eval_spatial_resolution, d_model=384)
 
-    # Define transformation parameters
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
  
 
     # Create the transformation
@@ -169,7 +171,7 @@ if __name__ == "__main__":
     ])
 
     shared_train_transform = Compose([
-        RandomResizedCrop(size=(input_size, input_size), scale=(min_scale_factor, max_scale_factor)),
+        Resize(size=(input_size, input_size)),
         # RandomHorizontalFlip(probability=0.1),
     ])
 
@@ -185,7 +187,7 @@ if __name__ == "__main__":
     train_transforms = {"train": image_train_transform, "target": None, "shared": shared_train_transform}
     val_transforms = {"val": image_val_transform, "target": None , "shared": shared_val_transform}
     if DATASET == "MSCOCO":
-            dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, task=task, annotation_dir="/scratch-shared/mscoco_hbird/annotations")
+            dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, task=task, annotation_dir="/home/lbusser/annotations")
     elif DATASET == "NYUv2":
             dataset = NYUv2DataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms)
     else:

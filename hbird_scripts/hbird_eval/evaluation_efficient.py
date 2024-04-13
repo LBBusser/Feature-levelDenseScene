@@ -1,7 +1,7 @@
 import torch
 # from models import FeatureExtractor
 from models import FeatureExtractorBeta as FeatureExtractor
-from data_loader import PascalVOCDataModule, COCODataModule, NYUv2DataModule
+from data_loader import PascalVOCDataModule, COCODataModule, NYUv2DataModule, CocoTasksDataLoader
 import torchvision.transforms as trn
 import torch.nn.functional as F
 import shutil
@@ -40,6 +40,9 @@ def get_args_parser(add_help: bool = True):
     parser.add_argument("--evaluation_only", action='store_true', help="Evaluation only", required=False)
     parser.add_argument("--clusters", default=1000, type=int, help="Number of clusters")
     parser.add_argument("--dataset", default='MSCOCO', type=str, help="Dataset", choices=['MSCOCO', 'PascalVOC','NYUv2'])
+    parser.add_argument("--n_way", default=1, type=int, help="Number of classes")
+    parser.add_argument("--k_shot", default=2, type=int, help="Number of shots")
+    parser.add_argument("--k_query", default=2, type=int, help="Number of queries")
     return parser
 
 args = get_args_parser(add_help=True).parse_args()
@@ -67,6 +70,9 @@ os.makedirs(EXP_DIR, exist_ok = True)
 F_MEM = os.path.join(EXP_DIR, 'fts_memory_cluster.pt')
 L_MEM = os.path.join(EXP_DIR, 'lbl_memory_cluster.pt')
 cluster_index = f"/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_index.index"
+N_WAY = args.n_way
+K_SHOT = args.k_shot
+K_QUERY = args.k_query
 
 
 
@@ -124,7 +130,16 @@ class HummingbirdEvaluation():
                 dataset = COCODataModule(batch_size=64, train_transform=self.train_transforms, val_transform=self.val_transforms, task=task, annotation_dir="/scratch-shared/mscoco_hbird/annotations")
         elif DATASET == "NYUv2":
                 dataset = NYUv2DataModule(batch_size=64, train_transform=self.train_transforms, val_transform=self.val_transforms)
-        dataset.setup()
+        
+
+        few_shot_ds = CocoTasksDataLoader(data_path="/scratch-shared/mscoco_hbird", mode="train", batchsz=100, n_way=N_WAY, k_shot=K_SHOT, k_query=K_QUERY, resize=504, cluster_index = self.cluster_index, transforms = (self.image_train_transform, self.shared_val_transform))
+        
+        #Pipeline: 1. Iterate through train images, pick image process it, get the features, patchify the labels. 
+        #2. Gather images in the same cluster as current train image. Gather their features usin the scaNN and corresponding labels. 
+        #3. These features and labels extracted from scaNN can be used as support set, the train image patch would be the query set. 
+        #4. Transformer trained to predict the local label of the current train image, compare to the GT. And that will be loss signal.
+        
+        # dataset.setup()
         self.dataset_module = dataset
         self.incontext_evaluation()
 
@@ -150,6 +165,7 @@ class HummingbirdEvaluation():
         assert self.num_sampled_features <= 1296, "num_sampled_features exceeds the maximum allowed value of 1296. Please adjust the memory_size, train dataset size to correct this."
         self.feature_memory = torch.zeros((self.memory_size, self.feature_extractor.d_model))
         self.label_memory = torch.zeros((self.memory_size, self.dataset_module.get_num_classes()+1))
+        # self.label_memory = torch.zeros((self.memory_size, 14*14))
         self.feature_memory = self.feature_memory.to(self.device)
         self.label_memory = self.label_memory.to(self.device)
         idx = 0
@@ -180,20 +196,24 @@ class HummingbirdEvaluation():
                         num_classes = self.dataset_module.get_num_classes() + 1
                         one_hot_patch_gt = F.one_hot(patchified_gts, num_classes=num_classes).float()  ## (bs, spatial_resolution, spatial_resolution, c*patch_size*patch_size, num_classes)
                         label = one_hot_patch_gt.mean(dim=3) #Change the way labels are stored, maybe put raw labels in, no aggregate!
-                        sampled_features, sampled_indices = self.sample_features(features, patchified_gts)  
+                        # label = patchified_gts
+                        # sampled_features, sampled_indices = self.sample_features(features, patchified_gts)  
                     ###################
-                    normalized_sampled_features = sampled_features / torch.norm(sampled_features, dim=1, keepdim=True)
+                    # normalized_sampled_features = sampled_features / torch.norm(sampled_features, dim=1, keepdim=True)
+                    normalized_sampled_features = features / torch.norm(features, dim=1, keepdim=True)
                     # self.overlay_sampled_locations_on_gt(y, sampled_indices)
                     label = label.flatten(1, 2)  
+
                     ## select the labels of the sampled features
-                    sampled_indices = sampled_indices.to(self.device)    
+                    # sampled_indices = sampled_indices.to(self.device)    
                     ## repeat the label for each sampled feature
                     ###################
-                    if DATASET == "MSCOCO":
-                        label_hat = label.gather(1, sampled_indices.unsqueeze(-1).repeat(1, 1, label.shape[-1])) 
-                    elif DATASET == "NYUv2":
-                        label_hat = label.gather(1, sampled_indices)
-                        label_hat = label_hat.unsqueeze(-1)
+                    # if DATASET == "MSCOCO":
+                    #     label_hat = label.gather(1, sampled_indices.unsqueeze(-1).repeat(1, 1, label.shape[-1])) 
+                    # elif DATASET == "NYUv2":
+                    #     label_hat = label.gather(1, sampled_indices)
+                    #     label_hat = label_hat.unsqueeze(-1)
+                    label_hat = label
                     ###################
                     normalized_sampled_features = normalized_sampled_features.flatten(0, 1)
                     label_hat = label_hat.flatten(0, 1)
@@ -322,12 +342,12 @@ class HummingbirdEvaluation():
     def recall(self, x):
         query_features, _ = self.feature_extractor.get_intermediate_layer_feats(x)
  
-    def cross_attention(self, q, k, v, beta=0.02):
+    def cross_attention(self, q, k, v, beta=0.1):
         """
         Args: 
-            q (torch.Tensor): query tensor of shape (bs, num_patches, d_k)
-            k (torch.Tensor): key tensor of shape (bs, num_patches,  NN, d_k)
-            v (torch.Tensor): value tensor of shape (bs, num_patches, NN, label_dim)
+            q (torch.Tensor): features, query tensor of shape (bs, num_patches, d_k)
+            k (torch.Tensor): key_features, key tensor of shape (bs, num_patches,  NN, d_k)
+            v (torch.Tensor): key_labels, value tensor of shape (bs, num_patches, NN, label_dim)
         """
         d_k = q.size(-1)
         q = F.normalize(q, dim=-1)
@@ -392,12 +412,17 @@ class HummingbirdEvaluation():
 
                 key_features, key_labels = self.find_nearest_key_to_query(q)
                 label_hat =  self.cross_attention(features, key_features, key_labels) ## (bs, num_patches, label_dim)
+                
                 bs, _, label_dim = label_hat.shape
+                # label_hat = label_hat.reshape(bs, eval_spatial_resolution, eval_spatial_resolution, 14, 14)
+                # resized_label_hats = label_hat.squeeze(0).view(36, 36, 14, 14).permute(0, 2, 1, 3).reshape(504, 504)
                 label_hat = label_hat.reshape(bs, eval_spatial_resolution, eval_spatial_resolution, label_dim).permute(0, 3, 1, 2)
                 resized_label_hats =  F.interpolate(label_hat.float(), size=(h, w), mode="bilinear")
                 cluster_map = resized_label_hats.argmax(dim=1).unsqueeze(1)
                 label_hats.append(cluster_map.detach().cpu())
+                # label_hats.append(resized_label_hats.unsqueeze(0).unsqueeze(1).detach().cpu())
                 lables.append(y.detach().cpu())
+
             try:
                 if DATASET == "MSCOCO":
                     lables = torch.cat(lables) 

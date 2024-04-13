@@ -199,6 +199,52 @@ class PredsmIoU:
         return gt_to_matches
 
 
+
+class simple_PredsmIoU:
+    def __init__(self, num_classes: int):
+        """
+        Initialize the calculator with the number of classes.
+        :param num_classes: The total number of classes, including the background if applicable.
+        """
+        self.num_classes = num_classes
+        self.gt = []
+        self.pred = []
+
+    def update(self, gt: torch.Tensor, pred: torch.Tensor) -> None:
+        """
+        Accumulate ground truth and predictions.
+        """
+        self.gt.append(gt)
+        self.pred.append(pred)
+
+    def compute(self) -> float:
+        """
+        Compute the mean IoU across all classes.
+        """
+        # Concatenate all collected batches
+        gt = torch.cat(self.gt).cpu().numpy().astype(int)
+        pred = torch.cat(self.pred).cpu().numpy().astype(int)
+        
+        # Initialize containers for true positives, false positives, false negatives
+        tp = np.zeros(self.num_classes, dtype=np.int64)
+        fp = np.zeros(self.num_classes, dtype=np.int64)
+        fn = np.zeros(self.num_classes, dtype=np.int64)
+        
+        # Calculate TP, FP, FN per class
+        for cls in range(self.num_classes):
+            pred_inds = pred == cls
+            gt_inds = gt == cls
+            tp[cls] = np.logical_and(pred_inds, gt_inds).sum()
+            fp[cls] = np.logical_and(pred_inds, np.logical_not(gt_inds)).sum()
+            fn[cls] = np.logical_and(np.logical_not(pred_inds), gt_inds).sum()
+        
+        # Calculate IoU per class, handling division by zero
+        iou = tp / (tp + fp + fn + 1e-10)
+        
+        # Compute mean IoU across all classes
+        miou = np.nanmean(iou)  # Use nanmean to ignore NaNs in case some classes are not present
+        return miou
+
 ## test code
 
 if __name__ == "__main__":
