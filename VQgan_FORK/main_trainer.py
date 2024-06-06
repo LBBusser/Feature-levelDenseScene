@@ -55,7 +55,7 @@ class MainTrainer:
         # lightning_trainer.fit(self.model, self.train_loader, self.val_loader)
         #############
         lightning_trainer = L.Trainer(devices = 1, 
-                                      accelerator = "gpu", strategy='ddp_find_unused_parameters_true', max_epochs = self.num_epochs, accumulate_grad_batches=8, num_nodes=1, gradient_clip_val = 0.5, callbacks=[self.checkpoint_callback])
+                                      accelerator = "gpu", max_epochs = self.num_epochs, num_nodes=1, callbacks=[self.checkpoint_callback])
         lightning_trainer.fit(self.model,self.train_loader)
         #############
         # train_losses = []

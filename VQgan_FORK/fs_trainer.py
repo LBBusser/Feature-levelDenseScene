@@ -10,7 +10,7 @@ from models import FeatureExtractorBeta as FeatureExtractor
 sys.path.append('/home/lbusser/taming-transformers/')
 from taming.models.vqgan import VQModel, GumbelVQ
 from omegaconf import OmegaConf
-from transformers import get_constant_schedule_with_warmup
+from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
 from autoregressive_model import *
 from my_utils import *
 import torch.optim as optim
@@ -39,6 +39,8 @@ class MetaTrainer(L.LightningModule):
         self.k_spt = args.k_spt
         self.k_qry = args.k_qry
         self.batch_size  = args.batch_size
+        self.data_size = args.data_size
+        self.num_epochs = args.num_epochs
         self.warm_up_steps = args.warm_up_steps
         self.resize = args.img_size
         config_path = "/home/lbusser/hbird_scripts/hbird_eval/data/models/vqgan/configs/config16.yaml"
@@ -52,10 +54,10 @@ class MetaTrainer(L.LightningModule):
         self.feature_dim = self.feature_extractor.d_model
         self.model_name = args.trained_model_name
         self.ar_model = Autoregressive()
-        self.ar_model.igpt.transformer.wte.register_forward_hook(self.compute_norm_for_layer("wte"))
-        self.ar_model.mapper.register_forward_hook(self.compute_norm_for_layer("mapper"))
-        random_layer = 6
-        self.ar_model.igpt.transformer.h[random_layer].register_forward_hook(self.compute_norm_for_layer(f"layer {random_layer}"))
+        # self.ar_model.igpt.transformer.wte.register_forward_hook(self.compute_norm_for_layer("wte"))
+        # self.ar_model.mapper.register_forward_hook(self.compute_norm_for_layer("mapper"))
+        # random_layer = 6
+        # self.ar_model.igpt.transformer.h[random_layer].register_forward_hook(self.compute_norm_for_layer(f"layer {random_layer}"))
         #Freeze vq
         for param in self.vq_model.parameters():
             param.requires_grad = False
@@ -63,17 +65,17 @@ class MetaTrainer(L.LightningModule):
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
 
-    def compute_norm_for_layer(self, layer_name):
-        def hook(module, input, output):
-            if isinstance(output, tuple):
-                output =output[0]
-            norm = output.norm(2).item()  # Compute the L2 norm
-            print(f"Norm of output at {layer_name}: {norm}")
-        return hook
+    # def compute_norm_for_layer(self, layer_name):
+    #     def hook(module, input, output):
+    #         if isinstance(output, tuple):
+    #             output =output[0]
+    #         norm = output.norm(2).item()  # Compute the L2 norm
+    #         print(f"Norm of output at {layer_name}: {norm}")
+    #     return hook
     
     def print_gradients(self):
         for name, param in self.named_parameters():
-            if param.grad is not None:
+            if param.grad is not None and ("wte" in name or "wpe" in name or "mapper" in name):
                 grad_norm = param.grad.norm(2).item()
                 print(f'Gradient Norm for {name}: {grad_norm}')
     
@@ -113,6 +115,7 @@ class MetaTrainer(L.LightningModule):
             _,_, [_, _, qry_lbl_idx] = self.vq_model.encode(y_qry.squeeze(1))
         query_features = query_features.unsqueeze(1)
         out = self.ar_model.generate(support_lbl_idx.long(), support_features, query_features)
+        print(out.shape)
         pred = self.vq_model.quantize.get_codebook_entry(indices = out, shape = (out.shape[0], self.vq_dim, self.vq_dim, 256))
         # Calculate and print accuracy
         accuracy = self.calculate_accuracy(out, qry_lbl_idx.flatten(1,2))
@@ -143,8 +146,13 @@ class MetaTrainer(L.LightningModule):
         self.print_gradients()
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=self.lr)
-        scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=self.warm_up_steps)
+        optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay = 1e-5)
+        # scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=self.warm_up_steps)
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=self.warm_up_steps,
+            num_training_steps = (self.data_size/self.batch_size) * self.num_epochs
+        )
         return [optimizer], [scheduler]
     
     def calculate_accuracy(self, out, qry_lbl_idx):

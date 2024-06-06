@@ -23,9 +23,6 @@ class DINO2GPT(nn.Module):
 
     def forward(self, x):
         bs, seq_size, num_patches, dim = x.shape
-        x = x.reshape(bs, seq_size, int(num_patches**0.5), int(num_patches**0.5), dim)
-        x = x[:,:,:14,:14,:]
-        x = x.reshape(bs, seq_size, 196, dim)
         # First fully connected layer with ReLU activation and dropout
         x = self.norm0(x)
         x = self.activation(self.fc1(x))
@@ -47,7 +44,7 @@ class DINO2GPT(nn.Module):
         # Initialize weights similar to transformer architectures
         for module in self.modules():
             if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
+                nn.init.normal_(module.weight, std = 0.02)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
             elif isinstance(module, nn.LayerNorm):

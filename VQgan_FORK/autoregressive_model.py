@@ -9,8 +9,7 @@ from dino2gpt_mapper import *
 class Autoregressive(nn.Module):
     def __init__(self):
         super(Autoregressive, self).__init__()
-        self.bos_token = 16384
-        self.eos_token = 16385
+        
         self.n_embd = 512
         # self.config = ImageGPTConfig(vocab_size = 16386, n_positions= 2500 ,n_embd = self.n_embd, n_head = 8, n_layer = 24)
         # self.config = DeiTConfig(image_size = 504, patch_size = 14, num_hidden_layers=4, num_attention_heads=8)
@@ -19,15 +18,15 @@ class Autoregressive(nn.Module):
         ####################
         self.igpt = ImageGPTForCausalImageModeling.from_pretrained('openai/imagegpt-small')
         self.igpt.config.max_position_embeddings = 2500
-        self.igpt.config.vocab_size = 16386
-        self.igpt.transformer.wte = nn.Embedding(16386, self.igpt.config.hidden_size)
-        self.igpt.transformer.wpe = torch.nn.Embedding(16386, self.igpt.config.hidden_size)
-        self.igpt.lm_head = torch.nn.Linear(self.igpt.config.hidden_size, 16386)
+        self.igpt.config.vocab_size = 16384
+        self.igpt.transformer.wte = nn.Embedding(16384, self.igpt.config.hidden_size)
+        self.igpt.transformer.wpe = nn.Embedding(self.igpt.config.max_position_embeddings, self.igpt.config.hidden_size)
+        self.igpt.lm_head = nn.Linear(self.igpt.config.hidden_size, 16384)
        
         # Initialize weights similar to Image GPT
-        nn.init.xavier_normal_(self.igpt.transformer.wte.weight)
-        nn.init.xavier_normal_(self.igpt.transformer.wpe.weight)
-        nn.init.xavier_uniform_(self.igpt.lm_head.weight)
+        nn.init.normal_(self.igpt.transformer.wte.weight, std = 0.02)
+        nn.init.normal_(self.igpt.transformer.wpe.weight, std = 0.02)
+        nn.init.normal_(self.igpt.lm_head.weight, std = 0.02)
         if self.igpt.lm_head.bias is not None:
             nn.init.zeros_(self.igpt.lm_head.bias)
    
@@ -38,19 +37,17 @@ class Autoregressive(nn.Module):
         #Map the features to output of w2e size.
         #Get the output of the w2e from the model.
         #Create the visual sentence with bos and eos tokens (interchange features and labels, like before), pass that through the model.
-        bos_embedding = self.igpt.transformer.wte(torch.full((support_tokens.shape[0], 1), self.bos_token, dtype=torch.long).cuda())
-        eos_embedding = self.igpt.transformer.wte(torch.full((support_tokens.shape[0], 1), self.eos_token, dtype=torch.long).cuda())
         support_embeddings = self.igpt.transformer.wte(support_tokens)
         query_embeddings = self.igpt.transformer.wte(query_tokens)
         support_features_proj = self.mapper(support_features)
         query_features_proj = self.mapper(query_features)
  
-        visual_sentence = self.create_sentences(support_features_proj, support_embeddings, query_features_proj, query_embeddings).flatten(1,2)  
-        #maybe do without bos and eos
-        input = torch.cat([bos_embedding, visual_sentence[:,:-max_new_tokens], eos_embedding, visual_sentence[:,-max_new_tokens:]], dim=1)
-        targets = torch.full((input.shape[0],input.shape[1]), -100)
+        visual_sentence = self.create_sentences(support_features_proj, support_embeddings, query_features_proj, query_embeddings)
+        # print(visual_sentence.shape)
+        targets = torch.full((visual_sentence.shape[0],visual_sentence.shape[1]), -100)
+        # print(targets.shape)
         targets[:,-max_new_tokens:] = query_tokens
-        out = self.igpt(inputs_embeds = input, labels = targets.cuda())        
+        out = self.igpt(inputs_embeds = visual_sentence, labels = targets.cuda())        
         return out.loss
 
     def normalize_and_scale_features(self, features, label_norms):
@@ -77,25 +74,22 @@ class Autoregressive(nn.Module):
         # print("Norms of scaled support features:", scaled_supp_features.norm(p=2, dim=-1))
         visual_sentences = []
         for i in range(spt_sz):
-            visual_sentences.append(scaled_supp_features[:,i])
-            visual_sentences.append(supp_labels[:,i])
-
-        visual_sentences = torch.stack(visual_sentences, dim=1)
-        visual_sentences = torch.cat([visual_sentences, scaled_query_features], dim=1)
+            combined_features = torch.cat([scaled_supp_features[:,i], supp_labels[:,i]], dim=1)
+            visual_sentences.append(combined_features)
+        visual_sentences = torch.stack(visual_sentences, dim=1).view(bs, -1, dim)
+        visual_sentences = torch.cat([visual_sentences, scaled_query_features.squeeze(1)], dim=1)
+      
         if query_labels is not None:
-            visual_sentences = torch.cat([visual_sentences, query_labels.unsqueeze(1)], dim=1)
+            visual_sentences = torch.cat([visual_sentences, query_labels], dim=1)
         return visual_sentences
     
     def generate(self, support_tokens, support_features, query_features, max_new_tokens = 196):
-        bos_embedding = self.igpt.transformer.wte(torch.full((support_tokens.shape[0], 1), self.bos_token, dtype=torch.long).cuda())
-        eos_embedding = self.igpt.transformer.wte(torch.full((support_tokens.shape[0], 1), self.eos_token, dtype=torch.long).cuda())
         support_embeddings = self.igpt.transformer.wte(support_tokens)
         support_features_proj = self.mapper(support_features)
         query_features_proj = self.mapper(query_features)
  
-        visual_sentence = self.create_sentences(support_features_proj, support_embeddings, query_features_proj).flatten(1,2)  
-        input = torch.cat([bos_embedding, visual_sentence, eos_embedding], dim=1)
-        generated = input
+        visual_sentence = self.create_sentences(support_features_proj, support_embeddings, query_features_proj) 
+        generated = visual_sentence
         generated_tokens = []
         for _ in range(max_new_tokens):
             outputs = self.igpt(inputs_embeds=generated)
