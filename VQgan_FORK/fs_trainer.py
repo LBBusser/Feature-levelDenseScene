@@ -18,6 +18,7 @@ import scann
 import argparse
 import pytorch_lightning as pl
 import faiss
+from functools import partial
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from data_loader import CocoMemoryTasksDataLoader, NYUMemoryTasksDataLoader
@@ -96,9 +97,6 @@ class MetaTrainer(L.LightningModule):
     
 
     def forward(self, x_spt, y_spt, x_qry, y_qry):
-        """
-        """
-
         support_features, support_lbl_idx = self.create_memory(x_spt, y_spt)   
         with torch.no_grad():
             query_features, _, _= self.feature_extractor.forward_features(x_qry.squeeze(1)) #shape query [bs, num_patches , d_k]
@@ -115,12 +113,12 @@ class MetaTrainer(L.LightningModule):
             _,_, [_, _, qry_lbl_idx] = self.vq_model.encode(y_qry.squeeze(1))
         query_features = query_features.unsqueeze(1)
         out = self.ar_model.generate(support_lbl_idx.long(), support_features, query_features)
-        print(out.shape)
         pred = self.vq_model.quantize.get_codebook_entry(indices = out, shape = (out.shape[0], self.vq_dim, self.vq_dim, 256))
         # Calculate and print accuracy
         accuracy = self.calculate_accuracy(out, qry_lbl_idx.flatten(1,2))
         print(f"Accuracy: {accuracy:.2f}%")
         out = self.vq_model.decode(pred)
+        print(out.shape)
         return out
     
     def training_step(self, batch, batch_idx):
@@ -146,7 +144,9 @@ class MetaTrainer(L.LightningModule):
         self.print_gradients()
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay = 1e-5)
+        optimizer = optim.AdamW(self.parameters(), lr=self.lr)
+        # optimizer = optim.Shampoo(self.parameters(), lr=self.lr)
+        # optimizer = load_optimizer(optimizer = 'Shampoo')(self.parameters())
         # scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=self.warm_up_steps)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,

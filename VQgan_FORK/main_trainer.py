@@ -37,8 +37,8 @@ class MainTrainer:
         self.val_loader = val_loader
         self.test_loader = test_loader
         ###############
-        # self.checkpoint_callback = ModelCheckpoint(monitor= 'val_loss')
-        self.checkpoint_callback = ModelCheckpoint(monitor= 'train_loss')
+        self.checkpoint_callback = ModelCheckpoint(monitor= 'val_loss')
+        # self.checkpoint_callback = ModelCheckpoint(monitor= 'train_loss')
         ###############
         # self.early_stopping = EarlyStopping(args)
         # self.optimizer = optim.AdamW(params=self.params_with_grad, lr=self.lr)
@@ -55,8 +55,8 @@ class MainTrainer:
         # lightning_trainer.fit(self.model, self.train_loader, self.val_loader)
         #############
         lightning_trainer = L.Trainer(devices = 1, 
-                                      accelerator = "gpu", max_epochs = self.num_epochs, num_nodes=1, callbacks=[self.checkpoint_callback])
-        lightning_trainer.fit(self.model,self.train_loader)
+                                      accelerator = "gpu", max_epochs = self.num_epochs, accumulate_grad_batches = 4, num_nodes=1, callbacks=[self.checkpoint_callback])
+        lightning_trainer.fit(self.model,self.train_loader, self.val_loader)
         #############
         # train_losses = []
         # val_losses = []
@@ -126,8 +126,8 @@ class MainTrainer:
         # trainer = L.Trainer(accelerator='gpu', strategy='ddp_find_unused_parameters_true', devices=2)	
         # [out] = trainer.predict(model, self.test_loader)
         ######
-        trainer = L.Trainer(accelerator= 'gpu', strategy='ddp_find_unused_parameters_true', devices=1, precision="bf16-mixed")
-        [out] = trainer.predict(model, self.train_loader)
+        trainer = L.Trainer(accelerator= 'gpu', devices=1)
+        out = trainer.predict(model, self.test_loader)
         all_predictions.append(out['pred'])
         all_labels.append(out['mask'])
         all_images.append(out['image'])
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     argparser.add_argument('--early_stop_patience', type=int, help='#epochs w/o improvement', default=3)
     argparser.add_argument('--delta', type=float, help='min change in the monitored val loss', default=0.01)
     argparser.add_argument('--lr', type=float, help='LR for training', default=5e-04)
-    argparser.add_argument('--warm_up_steps', type=int, help='warm up steps', default=100)
+    argparser.add_argument('--warm_up_steps', type=int, help='warm up steps', default=500)
     argparser.add_argument('--trained_model_name', type=str, default='default')
     argparser.add_argument('--patch_size', type=int, default=14)
     args = argparser.parse_args()

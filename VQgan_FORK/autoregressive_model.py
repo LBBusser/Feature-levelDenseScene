@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from my_utils import set_device
 from transformers import ImageGPTModel, ImageGPTConfig, DeiTConfig, DeiTModel, ImageGPTForCausalImageModeling
 from dino2gpt_mapper import *
+from lora_wrapper import *
 
 class Autoregressive(nn.Module):
     def __init__(self):
@@ -32,6 +33,19 @@ class Autoregressive(nn.Module):
    
        ####################
         self.mapper = DINO2GPT(768, self.n_embd)
+        for param in self.igpt.parameters():
+            param.requires_grad = False
+
+        # Unfreeze specific layers
+        for param in self.igpt.transformer.wte.parameters():
+            param.requires_grad = True
+        for param in self.igpt.transformer.wpe.parameters():
+            param.requires_grad = True
+        for param in self.igpt.lm_head.parameters():
+            param.requires_grad = True
+
+        print(self.update_model_layers(self.igpt))
+
 
     def forward(self, support_tokens, query_tokens, support_features, query_features, max_new_tokens = 196):
         #Map the features to output of w2e size.
@@ -99,4 +113,25 @@ class Autoregressive(nn.Module):
             generated = torch.cat((generated, next_token_embeds), dim=1)
             generated_tokens.append(next_token)
         return torch.stack(generated_tokens, dim=1).squeeze()
+    
+    def update_model_layers(self, model):
+        # Set LoRA hyperparameters
+        lora_r = 8
+        lora_alpha = 16
+        lora_dropout = 0.05
+        # flag to apply LoRA to Transformer layers
+        lora_attn = True
+        # flag to apply LoRA to MLP layers
+        lora_mlp = True
+
+        # Apply LoRA modifications to the GPT2 layers
+        for block in model.transformer.h:
+            if lora_attn:
+                block.attn.c_attn = LoRAConv1DWrapper(block.attn.c_attn, rank=2)
+                block.attn.c_proj = LoRAConv1DWrapper(block.attn.c_proj, rank=2)
+
+            if lora_mlp:
+                block.mlp.c_fc = LoRAConv1DWrapper(block.mlp.c_fc, rank=2)
+                block.mlp.c_proj = LoRAConv1DWrapper(block.mlp.c_proj, rank=2)
+        return model
 
