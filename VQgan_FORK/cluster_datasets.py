@@ -144,11 +144,6 @@ if __name__ == "__main__":
         input_size = 512
         eval_spatial_resolution = input_size // 16
         vit_model = torch.hub.load('facebookresearch/dino:main', MODEL)
-    
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
-    # vit_model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
         
     ########################
     task = "normal"

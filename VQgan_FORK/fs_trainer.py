@@ -55,30 +55,20 @@ class MetaTrainer(L.LightningModule):
         self.feature_dim = self.feature_extractor.d_model
         self.model_name = args.trained_model_name
         self.ar_model = Autoregressive()
-        # self.ar_model.igpt.transformer.wte.register_forward_hook(self.compute_norm_for_layer("wte"))
-        # self.ar_model.mapper.register_forward_hook(self.compute_norm_for_layer("mapper"))
-        # random_layer = 6
-        # self.ar_model.igpt.transformer.h[random_layer].register_forward_hook(self.compute_norm_for_layer(f"layer {random_layer}"))
+    
         #Freeze vq
         for param in self.vq_model.parameters():
             param.requires_grad = False
         #Freeze feature extractor
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
-
-    # def compute_norm_for_layer(self, layer_name):
-    #     def hook(module, input, output):
-    #         if isinstance(output, tuple):
-    #             output =output[0]
-    #         norm = output.norm(2).item()  # Compute the L2 norm
-    #         print(f"Norm of output at {layer_name}: {norm}")
-    #     return hook
     
     def print_gradients(self):
         for name, param in self.named_parameters():
-            if param.grad is not None and ("wte" in name or "wpe" in name or "mapper" in name):
+            if param.grad is not None:
                 grad_norm = param.grad.norm(2).item()
-                print(f'Gradient Norm for {name}: {grad_norm}')
+                if grad_norm >= 2:
+                    print(f'Gradient Norm for {name}: {grad_norm}')
     
     def create_memory(self, x_spt, y_spt):
         bs, spt_sz, ch, h,w = x_spt.shape
@@ -106,36 +96,37 @@ class MetaTrainer(L.LightningModule):
         loss = self.ar_model(support_lbl_idx.long(), qry_lbl_idx.long(), support_features, query_features)
         return loss
     
-    def generate(self, x_spt, y_spt, x_qry, y_qry):
+    def generate(self, x_spt, y_spt, x_qry, y_qry, perplex = False):
+        total_mae = 0
+        batch = 0
         support_features, support_lbl_idx = self.create_memory(x_spt, y_spt)
         with torch.no_grad():
             query_features,_,_= self.feature_extractor.forward_features(x_qry.squeeze(1))
-            _,_, [_, _, qry_lbl_idx] = self.vq_model.encode(y_qry.squeeze(1))
+            # _,_, [_, _, qry_lbl_idx] = self.vq_model.encode(y_qry.squeeze(1))
         query_features = query_features.unsqueeze(1)
-        out = self.ar_model.generate(support_lbl_idx.long(), support_features, query_features)
+        out = self.ar_model.generate(support_lbl_idx.long(), support_features, query_features, perplex=perplex)
         pred = self.vq_model.quantize.get_codebook_entry(indices = out, shape = (out.shape[0], self.vq_dim, self.vq_dim, 256))
         # Calculate and print accuracy
-        accuracy = self.calculate_accuracy(out, qry_lbl_idx.flatten(1,2))
-        print(f"Accuracy: {accuracy:.2f}%")
+        # accuracy = self.calculate_accuracy(out, qry_lbl_idx.flatten(1,2))
+        # print(f"Accuracy: {accuracy:.2f}%")
         out = self.vq_model.decode(pred)
-        print(out.shape)
         return out
     
     def training_step(self, batch, batch_idx):
         x_spt, y_spt, x_qry, y_qry = batch
         loss = self(x_spt, y_spt, x_qry, y_qry)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=False)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=False)
         return loss
     
     def validation_step(self, batch, batch_idx):
         x_spt, y_spt, x_qry, y_qry = batch
         val_loss = self(x_spt, y_spt, x_qry, y_qry)
-        self.log("val_loss", val_loss, prog_bar=True, on_step= True, sync_dist = True)
+        self.log("val_loss", val_loss, prog_bar=True, on_step= False, sync_dist = True)
         return val_loss
     
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+    def predict_step(self, batch, batch_idx, dataloader_idx=0, perplex = True):
         x_spt, y_spt, x_qry, y_qry = batch
-        out = self.generate(x_spt, y_spt, x_qry, y_qry)
+        out = self.generate(x_spt, y_spt, x_qry, y_qry, perplex = perplex)
         return {'pred': out, 'image': x_qry, 'mask': y_qry}
 
 
@@ -145,9 +136,6 @@ class MetaTrainer(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.parameters(), lr=self.lr)
-        # optimizer = optim.Shampoo(self.parameters(), lr=self.lr)
-        # optimizer = load_optimizer(optimizer = 'Shampoo')(self.parameters())
-        # scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=self.warm_up_steps)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             num_warmup_steps=self.warm_up_steps,

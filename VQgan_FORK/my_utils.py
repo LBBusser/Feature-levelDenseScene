@@ -101,40 +101,6 @@ def set_device():
         return "cuda"
     else:
         return "cpu"
-def denormalize_video(video):
-    """
-    video: [1, nf, c, h, w]
-    """
-    denormalized_video = video.cpu().detach() * torch.tensor([0.225, 0.225, 0.225]).view(1, 1, 3, 1, 1) + torch.tensor([0.45, 0.45, 0.45]).view(1, 1, 3, 1, 1)
-    denormalized_video = (denormalized_video * 255).type(torch.uint8)
-    denormalized_video = denormalized_video.squeeze(0)
-    return denormalized_video
-
-def overlay_video_cmap(cluster_maps, denormalized_video):
-    """
-    cluster_maps: [nf, h, w]
-    denormalized_video: [nf, c, h, w]
-    """
-        ## convert cluster_maps to [num_maps, h, w]
-    masks = []
-    cluster_ids = torch.unique(cluster_maps)
-    for cluster_map in cluster_maps:
-        mask = torch.zeros((cluster_ids.shape[0], cluster_map.shape[0], cluster_map.shape[1])) 
-        mask = mask.type(torch.bool)
-        for i, cluster_id in enumerate(cluster_ids):
-                ## make a boolean mask for each cluster
-                ## make a boolean mask for each cluster if cluster_map == cluster_id
-            boolean_mask = (cluster_map == cluster_id)
-            mask[i, :, :] = boolean_mask
-        masks.append(mask)
-    cluster_maps = torch.stack(masks)
-            
-    overlayed = [
-                draw_segmentation_masks(img, masks=mask, alpha=0.5)
-                for img, mask in zip(denormalized_video, cluster_maps)
-            ]
-    overlayed = torch.stack(overlayed)
-    return cluster_maps,overlayed
 
 def write_data_to_txt(file_path, data):
     if path.exists(file_path):
@@ -144,40 +110,6 @@ def write_data_to_txt(file_path, data):
         with open(file_path, 'w') as file:
             file.write(data)
             
-def make_seg_maps(data, cluster_map, logging_directory, name, w_featmap=28, h_featmap=28):
-    bs, fs, c, h, w = data.shape
-    # cluster_map = torch.Tensor(cluster_map.reshape(bs, fs, w_featmap, h_featmap))
-    # cluster_map = nn.functional.interpolate(cluster_map.type(torch.DoubleTensor), scale_factor=8, mode="nearest").detach().cpu()
-    cluster_map = cluster_map
-    for i, datum in enumerate(data):
-        frame_buffer = []
-        for j, frame in enumerate(datum):
-            frame_buffer.append(localize_objects(frame.permute(1, 2, 0).detach().cpu(), cluster_map[i, j]))
-        convert_list_to_video(frame_buffer, name + "_" + str(i), speed=1000/ datum.size(0), directory=logging_directory, wdb_log=False)
-    
-
-def visualize_sampled_videos(samples, path, name):
-    # os.system(f'rm -r {path}')
-    scale_255 = lambda x : (x * 255).astype('uint8')
-    layer, height, width = samples[0].shape[-3:]
-    if not os.path.isdir(path):
-        os.mkdir(path)
-    video = cv2.VideoWriter(path + name, 0, 1, (width,height))
-    if len(samples.shape) == 4: ## sampling a batch of images and not clips
-        frames = samples
-    else: ## clip-wise sampling
-        frames = samples[0][0]  
-
-    for frame in frames:
-        if len(frame.shape) == 3:
-            frame_1 = frame.permute(1, 2, 0).numpy()
-        else:
-            frame_1 = frame[..., None].repeat(1, 1, 3).numpy()
-        temp = scale_255(frame_1)
-        # temp = frame_1
-        video.write(temp)
-    video.release()
-    cv2.destroyAllWindows()
 
 def localize_objects(input_img, cluster_map):
 
@@ -204,55 +136,3 @@ def localize_objects(input_img, cluster_map):
         fig.savefig(buffer, format='png')
         buffer.seek(0)
         return np.asarray(Image.open(buffer))
-
-
-def convert_list_to_video(frames_list, name, speed, directory="", wdb_log=False):
-    frames_list = [Image.fromarray(frame) for frame in frames_list]
-    frames_list[0].save(f"{directory}{name}.gif", save_all=True, append_images=frames_list[1:], duration=speed, loop=0)
-    if wdb_log:
-        wandb.log({name: wandb.Video(f"{directory}{name}.gif", fps=4, format="gif")})
-
-
-@torch.no_grad()
-def sinkhorn(Q: torch.Tensor, nmb_iters: int, world_size=1) -> torch.Tensor:
-    with torch.no_grad():
-        Q = Q.detach().clone()
-        sum_Q = torch.sum(Q)
-        if world_size > 1:
-            dist.all_reduce(sum_Q)
-        Q /= sum_Q
-        K, B = Q.shape
-        u = torch.zeros(K).to(Q.device)
-        r = torch.ones(K).to(Q.device) / K
-        c = torch.ones(B).to(Q.device) / B * world_size
-
-        if world_size > 1:
-            curr_sum = torch.sum(Q, dim=1)
-            dist.all_reduce(curr_sum)
-
-        for _ in range(nmb_iters):
-            if world_size > 1:
-                u = curr_sum
-            else:
-                u = torch.sum(Q, dim=1)
-            Q *= (r / u).unsqueeze(1)
-            Q *= (c / torch.sum(Q, dim=0)).unsqueeze(0)
-            if world_size > 1:
-                curr_sum = torch.sum(Q, dim=1)
-                dist.all_reduce(curr_sum)
-
-        return (Q / torch.sum(Q, dim=0, keepdim=True)).t().float()
-
-
-def find_optimal_assignment(scores, epsilon, sinkhorn_iterations, world_size=1):
-    """
-    Computes the Sinkhorn matrix Q.
-    :param scores: similarity matrix
-    :return: Sinkhorn matrix Q
-    """
-    with torch.no_grad():
-        q = torch.exp(scores / epsilon).t()
-        q = sinkhorn(q, sinkhorn_iterations, world_size=world_size)
-        # q = torch.softmax(scores / epsilon, dim=0)
-        # q = q / q.sum(dim=1, keepdim=True)
-    return q

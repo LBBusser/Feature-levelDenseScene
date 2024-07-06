@@ -222,8 +222,6 @@ class COCODataModule():
     def setup(self):
         subset_indices_train = None
         subset_indices_val = None
-        # subset_indices_train = list(range(175))
-        # subset_indices_val  = list(range(100))
         print("MSCOCO", self.task, "segmentation")
         print("Dataset loaded with memory bank mode: ", self.memory_bank)
         self.train_dataset = MSCOCODataset(self.dir, split = "train", transform=self.train_transform, shared_transform=self.shared_train_transform, subset_indices=subset_indices_train, task = self.task, annotation_file = self.annotation_file, cluster_images = self.cluster_images, memory_bank = self.memory_bank)
@@ -500,6 +498,24 @@ class NYUMemoryTasksDataLoader(Dataset):
         depth_array = depth_array.astype(np.float32)
         depth_array = (depth_array - self.global_min) / (self.global_max - self.global_min)
         return depth_array
+
+    def save_tensor_as_image(self, tensor, file_path, mask=False):
+        """
+        Save a tensor as an image file.
+        :param tensor: Tensor to save.
+        :param file_path: Path where the image will be saved.
+        """
+        # Normalize the tensor to the range [0, 1]
+           # Normalize the tensor to the range [0, 1]
+        tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())
+        
+        # Convert tensor to numpy array with shape (H, W, C)
+        image = tensor.squeeze().permute(1, 2, 0).cpu().numpy()
+        
+        # Convert to uint8 type and save image
+        image = (image * 255).astype('uint8')
+        Image.fromarray(image).save(file_path)
+        print("Saved to", file_path)
     
     def create_batch(self, setsz):
         """
@@ -597,6 +613,8 @@ class NYUMemoryTasksDataLoader(Dataset):
         support_y = torch.zeros((self.k_shot*self.k_query, 3, self.resize,self.resize),dtype = torch.float)
         query_x = torch.FloatTensor(self.k_query, 3, self.resize, self.resize)
         query_y = torch.zeros((self.k_query, 3, self.resize,self.resize),dtype = torch.float)
+        save_dir = os.path.join("support_images", self.mode, f"batch_{index}")
+        os.makedirs(save_dir, exist_ok=True)
         # image path files  f"/coco/images/{self.mode}2017/{int(img_id):012d}.jpg"
 
         for i,img_path in enumerate(self.support_x_batch[index]): #shape (k_shot)
@@ -605,6 +623,10 @@ class NYUMemoryTasksDataLoader(Dataset):
             # patches = mask.reshape(self.resize//14, 14, self.resize//14, 14).permute(0, 2, 1, 3).reshape(-1, 14, 14)
             support_y[i]= torch.from_numpy(mask).repeat(3,1,1)
             support_x[i] = image
+
+            # self.save_tensor_as_image(image, os.path.join(save_dir, f"support_image_{i}.jpg"))
+            # self.save_tensor_as_image(mask, os.path.join(save_dir, f"support_mask_{i}.jpg"), mask=True)
+
 
         for i, img_id in enumerate(self.query_x_batch[index]): #shape (k_query)
             img_name, mask_name = self.get_img_mask_names(img_path)
@@ -625,12 +647,13 @@ class CocoMemoryTasksDataLoader(Dataset):
     sets: contains n_way * k_shot for meta-train set, n_way * k_query for meta-test set.
     """
 
-    def __init__(self, data_path, mode, setsz, k_shot, k_query, resize, cluster_index, cluster_assignment, transforms = None, mode_idx= None):
+    def __init__(self, data_path, mode, setsz, k_shot, k_query, resize, cluster_index, cluster_assignment, transforms = None, mode_idx= None, panoptic = False):
         self.resize = resize
         self.batchsz = setsz  # batch of set, not batch of imgs
         self.k_shot = k_shot  # k-shot
         self.k_query = k_query  # for evaluation
         self.cluster_index = cluster_index
+        self.panoptic = panoptic
         self.mode_idx = mode_idx
         if transforms is not None:
             self.transform_train = transforms[0]
@@ -641,6 +664,8 @@ class CocoMemoryTasksDataLoader(Dataset):
         self.mode = mode
         self.images_dir = os.path.join(self.path, self.mode + '2017')
         self.masks_dir = os.path.join(self.path, self.mode + '_masks2017')
+        if self.panoptic:
+            self.masks_dir = '/home/lbusser/annotations/panoptic/panoptic_val2017'
         if self.mode_idx is not None:
             self.images = sorted(os.listdir(self.images_dir))
             self.images = [self.images[idx] for idx in self.mode_idx]
@@ -729,8 +754,30 @@ class CocoMemoryTasksDataLoader(Dataset):
         """Generate image and mask file names."""
         img_name = f"{self.path}/{self.mode}2017/{int(img_id):012d}.jpg"
         mask_name = f"{self.path}/{self.mode}_masks2017/{int(img_id):012d}.png"
+        if self.panoptic:
+            mask_name = f"/home/lbusser/annotations/panoptic/panoptic_val2017/{int(img_id):012d}.png"
         return img_name, mask_name
-    
+
+
+
+    def save_tensor_as_image(self, tensor, file_path):
+        """
+        Save a tensor as an image file.
+        :param tensor: Tensor to save.
+        :param file_path: Path where the image will be saved.
+        """
+        # Normalize the tensor to the range [0, 1]
+        tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())
+        
+        # Convert tensor to numpy array with shape (H, W, C)
+        image = tensor.squeeze().permute(1, 2, 0).cpu().numpy()
+        
+        # Convert to uint8 type and save image
+        image = (image * 255).astype('uint8')
+        Image.fromarray(image).save(file_path)
+        print("Saved to", file_path)
+
+
     def __getitem__(self, index):
         """
         index means index of the batch, 0<= index <= batchsz-1
@@ -741,7 +788,8 @@ class CocoMemoryTasksDataLoader(Dataset):
         support_y = torch.zeros((self.k_shot*self.k_query, 3, self.resize,self.resize),dtype = torch.float)
         query_x = torch.FloatTensor(self.k_query, 3, self.resize, self.resize)
         query_y = torch.zeros((self.k_query, 3, self.resize,self.resize),dtype = torch.float)
-
+        save_dir = os.path.join("support_images", self.mode, f"batch_{index}")
+        os.makedirs(save_dir, exist_ok=True)
         # image path files  f"/coco/images/{self.mode}2017/{int(img_id):012d}.jpg"
 
         for i,img_id in enumerate(self.support_x_batch[index]): #shape (k_shot)
@@ -753,6 +801,10 @@ class CocoMemoryTasksDataLoader(Dataset):
             support_y[i]= mask
             support_x[i] = image
 
+        # Save images and masks
+            self.save_tensor_as_image(image, os.path.join(save_dir, f"support_image_{i}.jpg"))
+            self.save_tensor_as_image(mask, os.path.join(save_dir, f"support_mask_{i}.jpg"))
+
         for i, img_id in enumerate(self.query_x_batch[index]): #shape (k_query)
             img_id = img_id.split("/")[-1]
             img_id = os.path.splitext(img_id)[0]
@@ -762,197 +814,44 @@ class CocoMemoryTasksDataLoader(Dataset):
             query_y[i]= mask
             query_x[i] = image
 
-        return support_x, support_y, query_x, query_y
-
-    def __len__(self):
-        return self.batchsz
-
-class KeyPointMemoryTasksDataLoader(Dataset):
-    """
-    """
-
-    def __init__(self, data_path, mode, setsz, k_shot, k_query, resize, cluster_index, cluster_assignment, transforms = None, mode_idx = None):
-        self.resize = resize
-        self.batchsz = setsz  # batch of set, not batch of imgs
-        self.k_shot = k_shot  # k-shot
-        self.k_query = k_query  # for evaluation
-        self.cluster_index = cluster_index
-        if transforms is not None:
-            self.transform_train = transforms[0]
-            self.transform_shared = transforms[1]
-        print('DATA SETTINGS: %s, batchsz:%d, %d-shot, %d-query, resize:%d' % (mode, setsz, k_shot,
-                                                                                          k_query, resize))
-        self.path = data_path  # image path
-        self.mode = mode
-        self.images_dir = os.path.join(self.path, self.mode + '2017')
-        self.masks_dir = os.path.join(self.path, self.mode + '_masks2017')
-        self.kp_masks_dir = os.path.join(self.path, f'{self.mode}_keypoints2017')
-        self.mode_idx = mode_idx
-        # Filter images that have corresponding keypoint masks
-        kp_masks = sorted(os.listdir(self.kp_masks_dir))
-        mask_set = set(kp_masks)  # Convert list to set for faster lookup
-        if self.mode_idx is not None:
-            all_images = sorted(os.listdir(self.images_dir))
-            all_images = [all_images[idx] for idx in self.mode_idx]
-            all_masks = sorted(os.listdir(self.masks_dir))
-            all_masks = [all_masks[idx] for idx in self.mode_idx]
-            self.images = []
-            self.masks = []
-            for img_id in all_images:
-                if img_id in mask_set:
-                    self.images.append(img_id)
-                    self.masks.append(img_id)
-        else:
-            all_images = sorted(os.listdir(self.images_dir))
-            self.masks = sorted(os.listdir(self.kp_masks_dir))
-            self.images = []
-            for img_id in all_images:
-                if img_id in mask_set:
-                    self.images.append(img_id)
-      
-      
-        self.cluster_assignment = self.load_cluster_assignment(cluster_assignment)
-        self.create_batch(self.batchsz)
-    
-    def load_cluster_assignment(self, filename):
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-          
-    def create_batch(self, setsz):
-        """
-        create batch for meta-learning.
-        ×episode× here means batch, and it means how many sets we want to retain.
-        :param episodes: batch size
-        :return:
-        """
-        self.support_x_batch = []  # support set batch
-        self.query_x_batch = []  # query set batch
-        print("Initialising KP batch creation for few shot meta learning...")
-        for b in tqdm(range(setsz)):
-            support_x = []
-            query_x = []
-            current_query = np.random.choice(self.images, self.k_query, False) #randomly select k_query images from train set
-            current_query = [self.images_dir +"/"+ img_id for img_id in current_query]
-            for _ in range(len(current_query)):  # We iterate over the number of selected queries
-                while True:  # Start an indefinite loop that we'll break out of once conditions are met
-                    selected = current_query[_]  # Get the current query image
-                    selected_id = selected.split("/")[-1]
-                    self.images.remove(selected_id)
-                    cluster_id = self.cluster_assignment.get(selected)  # Get the cluster assignment of the image
-                    selected_imgs = [image_id for image_id, cid in self.cluster_assignment.items() if cid == cluster_id]  # Get the other images in the same cluster
-                    # Remove the image itself to prevent duplicates in support and query
-                    selected_imgs.remove(selected)
-                    for img in selected_imgs[:]:
-                        selected_id = img.split("/")[-1]
-                        if not os.path.exists(os.path.join(self.kp_masks_dir, selected_id)):
-                            selected_imgs.remove(img)
-                    np.random.shuffle(selected_imgs)
-                    if len(selected_imgs) >= self.k_shot:
-                        selected_imgs = np.random.choice(selected_imgs, self.k_shot, False) 
-                        break  # Conditions are met, break out of the while loop
-                    else:
-                        print("Selecting new query, because support set too small!")
-                        # Ensure that the new selection does not repeat previously selected images
-                        new_query = np.random.choice([img for img in self.images if img not in current_query], 1)[0]
-                        current_query[_] = self.images_dir + '/' + new_query
-                        continue  # Restart the while loop with the new selection
-                support_x.extend(selected_imgs)
-            query_x.append(current_query)
-            
-            np.random.shuffle(support_x)
-            np.random.shuffle(query_x)
-            ##########################################################################################
-            # support_x and query_x now contains selected img_ids that are similar to query image(s) #
-            ##########################################################################################
-            self.support_x_batch.append(support_x)  # append set to current sets
-            self.query_x_batch.extend(query_x)  # append set to current sets
-
-    
-    def load_and_transform(self, img_name, mask_name, transform_img, transform_shared):
-        """Load and transform an image and its mask."""
-        image = Image.open(img_name).convert('RGB')
-        mask = Image.open(mask_name)
-        if transform_img:
-            image = transform_img(image)
-        if transform_shared:
-            image, mask = transform_shared(image, mask)
-        image = image.unsqueeze(0)
-        mask = mask/255
-        return image, mask
-    
-    def update_tensors(self, image, mask,  tensor_x, tensor_y, selected_idxs, selected_idx, idx):
-        """Update support_x/query_x and support_y/query_y tensors."""
-        tensor_x[idx] = image
-        tensor_y.append(mask)
-        selected_idxs.append(selected_idx)
-        idx+=1
-        return idx
-    
-    def get_img_mask_names(self, img_id):
-        """Generate image and mask file names."""
-        img_name = f"{self.path}/{self.mode}2017/{int(img_id):012d}.jpg"
-        mask_name = f"{self.path}/{self.mode}_keypoints2017/{int(img_id):012d}.jpg"
-        return img_name, mask_name
-    
-    def __getitem__(self, index):
-        """
-        index means index of the batch, 0<= index <= batchsz-1
-        :param index:
-        :return:
-        """
-        support_x = torch.FloatTensor(self.k_shot*self.k_query, 3, self.resize, self.resize)
-        support_y = torch.zeros((self.k_shot*self.k_query, 3, self.resize,self.resize),dtype = torch.float)
-        query_x = torch.FloatTensor(self.k_query, 3, self.resize, self.resize)
-        query_y = torch.zeros((self.k_query, 3, self.resize,self.resize),dtype = torch.float)
-
-        # image path files  f"/coco/images/{self.mode}2017/{int(img_id):012d}.jpg"
-
-        for i,img_id in enumerate(self.support_x_batch[index]): #shape (k_shot)
-            img_id = img_id.split("/")[-1] 
-            img_id = os.path.splitext(img_id)[0]
-            img_name, mask_name = self.get_img_mask_names(img_id)
-            image, mask = self.load_and_transform(img_name, mask_name, self.transform_train, self.transform_shared)
-            # patches = mask.reshape(self.resize//14, 14, self.resize//14, 14).permute(0, 2, 1, 3).reshape(-1, 14, 14)
-            support_y[i]= mask
-            support_x[i] = image
-
-        for i, img_id in enumerate(self.query_x_batch[index]): #shape (k_query)
-            img_id = img_id.split("/")[-1]
-            img_id = os.path.splitext(img_id)[0]
-            img_name, mask_name = self.get_img_mask_names(img_id)
-            image, mask = self.load_and_transform(img_name, mask_name, self.transform_train, self.transform_shared)
-            # patches = mask.reshape(self.resize//14, 14, self.resize//14, 14).permute(0, 2, 1, 3).reshape(-1, 14, 14)
-            query_y[i]= mask
-
-            query_x[i] = image
-
-       
         return support_x, support_y, query_x, query_y
 
     def __len__(self):
         return self.batchsz
 
 class CombinedDataset(Dataset):
-    def __init__(self, datasets):
+    def __init__(self, datasets, ratios):
         self.datasets = datasets
         self.num_datasets = len(datasets)
-        self.dataset_size = sum([len(dataset) for dataset in datasets])
+        self.ratios = ratios
+        self.total_ratio = sum(ratios)
+        self.dataset_sizes = [len(dataset) for dataset in datasets]
+        self.cumulative_ratios = [sum(ratios[:i+1]) for i in range(len(ratios))]
+
+        # Calculate the total size based on ratios
+        self.dataset_size = sum([size * ratio for size, ratio in zip(self.dataset_sizes, self.ratios)])
 
     def __len__(self):
         return self.dataset_size
 
     def __getitem__(self, idx):
-        # Determine from which dataset and which index to fetch the data, interleaving
-        dataset_idx = idx % self.num_datasets
-        # Calculate index within the dataset
-        data_idx = idx // self.num_datasets
+        # Normalize idx to range within total_ratio
+        normalized_idx = idx % self.total_ratio
+
+        # Determine which dataset to sample from
+        for i, cumulative_ratio in enumerate(self.cumulative_ratios):
+            if normalized_idx < cumulative_ratio:
+                dataset_idx = i
+                break
+
+        # Calculate index within the chosen dataset
+        dataset_ratio = self.ratios[dataset_idx]
+        effective_size = self.dataset_sizes[dataset_idx] * dataset_ratio
+        data_idx = (idx // self.total_ratio) % effective_size
+
         return self.datasets[dataset_idx][data_idx]
 
         
-
-
-
-    
 def test_mscoco_data_module(logger):
     min_scale_factor = 0.5
     max_scale_factor = 2.0
@@ -1175,3 +1074,4 @@ if __name__ == "__main__":
 
         break
 #--------------------------------------------------------------------------
+s

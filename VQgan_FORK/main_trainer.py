@@ -47,68 +47,11 @@ class MainTrainer:
         
     def train(self):
         print(f"START TRAINING {args.trained_model_name}")
-        start_train = time.time()
-        # early_stop_callback  = EarlyStopping(monitor='val_loss', patience=3, min_delta = 0.10)
-
-        # lightning_trainer = L.Trainer(devices = 2, 
-                                    #   accelerator = "gpu", strategy='ddp_find_unused_parameters_true', accumulate_grad_batches=8, max_epochs = self.num_epochs, num_nodes=1, callbacks=[self.checkpoint_callback])
-        # lightning_trainer.fit(self.model, self.train_loader, self.val_loader)
         #############
-        lightning_trainer = L.Trainer(devices = 1, 
-                                      accelerator = "gpu", max_epochs = self.num_epochs, accumulate_grad_batches = 4, num_nodes=1, callbacks=[self.checkpoint_callback])
+        lightning_trainer = L.Trainer(devices = 4, 
+                                      accelerator = "gpu", max_epochs = self.num_epochs, accumulate_grad_batches = 4, num_nodes=1 ,callbacks=[self.checkpoint_callback], precision='bf16-mixed', strategy='ddp_find_unused_parameters_true')
         lightning_trainer.fit(self.model,self.train_loader, self.val_loader)
         #############
-        # train_losses = []
-        # val_losses = []
-   
-        # for epoch_id in range(0, self.num_epochs):
-        #     print('------ START Epoch [{}/{}] ------'.format(epoch_id + 1, self.num_epochs))
-        #     self.model.train()
-        #     start = time.time()
-        #     with tqdm(desc='Epoch [{}/{}] - training'.format(str(epoch_id + 1), self.num_epochs), unit='it',
-        #               total=len(self.train_loader), position=0, leave=True) as pbar:
-        #         for batch_id, batch in enumerate(self.train_loader):
-                
-        #             loss = self.forward_batch(batch)
-        #             self.optimizer.zero_grad()
-        #             loss.backward()
-        #             # Compute gradients only for parameters that require them
-        #             # gradients = torch.autograd.grad(loss, self.params_with_grad, allow_unused=True)
-        #             # # Apply the gradients to the parameters
-        #             # for param, grad in zip(self.params_with_grad, gradients):
-        #             #     if grad is not None:
-        #             #         param.grad = grad
-        #             self.optimizer.step()
-        #             self.scheduler.step()
-        #             train_losses.append(loss.item())
-        #             pbar.set_postfix(loss=loss.item())
-        #             pbar.update()
-
-        #         with torch.no_grad():
-        #             self.model.eval()
-        #             print("Start validation")
-        #             for batch in tqdm(self.val_loader):
-        #                 val_loss = self.forward_batch(batch)
-        #                 val_losses.append(val_loss.item())
-
-        #     end = time.time()
-        #     train_log = "Training: Epoch [{}/{}], Mean Epoch Loss: {:.4f}, LR = {}" \
-        #         .format(epoch_id + 1, self.num_epochs, np.mean(train_losses), self.optimizer.param_groups[0]['lr'])
-
-        #     print(train_log)
-
-        #     print('Total time train + val of epoch {}: {:.4f} seconds'.format(epoch_id + 1, (end - start)))
-        #     print('------ END Epoch [{}/{}] ------'.format(epoch_id + 1, self.num_epochs))
-        #     self.early_stopping(val_loss=np.mean(val_losses), model=self.model)
-        #     if self.early_stopping.check_early_stop:
-        #         print("Early stopping ...")
-        #         break
-        # print("End of training.")
-        # end_train = time.time()
-        # train_time_info = 'Total training took {:.4f} minutes'.format((end_train - start_train) / 60)
-
-        # print(train_time_info)
-
         return self.model
 
     def forward_batch(self, batch):
@@ -122,74 +65,60 @@ class MainTrainer:
         all_predictions = []
         all_labels = []
         all_images = []
-        model = MetaTrainer.load_from_checkpoint(self.checkpoint_callback.best_model_path, args=args)
-        # trainer = L.Trainer(accelerator='gpu', strategy='ddp_find_unused_parameters_true', devices=2)	
-        # [out] = trainer.predict(model, self.test_loader)
+        # color_mapping = load_color_mapping('/home/lbusser/hbird_scripts/hbird_eval/data/color_map.json')
+        # class_ids = list(color_mapping.values())
+        # total_ious = []
+        model = MetaTrainer.load_from_checkpoint('/home/lbusser/lightning_logs/version_6833430/checkpoints/epoch=36-step=92500.ckpt', args=args)
         ######
         trainer = L.Trainer(accelerator= 'gpu', devices=1)
         out = trainer.predict(model, self.test_loader)
-        all_predictions.append(out['pred'])
-        all_labels.append(out['mask'])
-        all_images.append(out['image'])
+        for result in out:
+            all_predictions.append(result['pred'])
+            all_labels.append(result['mask'])
+            all_images.append(result['image'])
+            
+            
         # model = model.to(device)
         # print("Num. of tasks: {}".format(len(self.test_loader)))
-        # preds_all_test= []
-        # mae_scores = []
-        # all_labels = []
-        # all_images = []
-        # model.eval()
-        # miou_calculator = simple_PredsmIoU(81)
-        # for (x_spt, y_spt, x_qry, y_qry) in tqdm(self.test_loader):
-        #     x_spt, y_spt, x_qry, y_qry = x_spt.to(self.device), y_spt.to(self.device), x_qry.to(self.device), y_qry.to(self.device)
-        #     prediction = model.generate(x_spt, y_spt, x_qry, y_qry)
-        #     preds_all_test.append(prediction)
-        #     all_labels.append(y_qry)
-        #     all_images.append(x_qry)
-        #     print("------ Test {}-shot ({}-query) ------".format(args.k_spt, args.k_qry))
-        #     # my_utils.write_data_to_txt(file_path=log_file_path, data="Step: {} \tTest acc: {}\n".format(step, accs))
-  
+        all_predictions = torch.cat(all_predictions, dim=0)
+ 
+        all_labels = torch.cat(all_labels, dim=0)
+        all_images = torch.cat(all_images,dim=0)
+        # Normalize using global min and max
+        all_predictions_normalized = (all_predictions - all_predictions.min()) / (all_predictions.max() - all_predictions.min())
+        all_labels_normalized = (all_labels - all_labels.min()) / (all_labels.max() - all_labels.min())
+        # for pred, label in zip(all_predictions_normalized, all_labels_normalized):
+        #         quantized_pred = quantize_colors(pred, color_mapping)
+        #         pred_label_mask = color_mask_to_label_mask(quantized_pred, color_mapping)
+        #         label = label.squeeze(0).permute(1, 2, 0).numpy()
+        #         true_label_mask = color_mask_to_label_mask(label, color_mapping)
+        #         # print("Before quantized prediction:", np.unique(pred))
+        #         # print("Quantized Prediction:", np.unique(quantized_pred))
+        #         # print("Prediction Label Mask:", np.unique(pred_label_mask))
+        #         # print("True Label Mask:", np.unique(true_label_mask))
+        #         ious = calculate_iou(pred_label_mask, label, class_ids)
+              
+        #         total_ious.append(ious)
+        total_mae = F.l1_loss(all_predictions_normalized, all_labels_normalized, reduction= 'mean').item()
+        print(f"Average Mean Absolute Error (MAE): {total_mae:.4f}")
+        # print(all_predictions_normalized.max())
+        # print(all_labels_normalized.max())
+
+        # total_ious = np.array(total_ious)
+        # mean_iou_per_class = np.nanmean(total_ious, axis=0)
+        # mean_iou = np.nanmean(mean_iou_per_class)
+        # print(f"Mean Intersection over Union (mIoU): {mean_iou:.4f}")
       
         print("Saving first few test entries for visualisation...")
-        torch.save(all_labels[0:10], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_gts.pt")
-        torch.save(all_images[0:10], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_imgs.pt")
-        torch.save(all_predictions[0:10], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_preds.pt")
+        torch.save(all_labels[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_gts.pt")
+        torch.save(all_images[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_imgs.pt")
+        torch.save(all_predictions[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_preds.pt")
         # miou_score = miou_calculator.compute()
         # print("Mean IoU:", miou_score)
         # # accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
       
         # print("Mean MAE:", sum(mae_scores)/len(mae_scores)
 
-class EarlyStopping:
-    """ Adapted from:
-    Title: Early Stopping for PyTorch
-    Availability: https://github.com/Bjarten/early-stopping-pytorch """
-    """ Early stops the training if validation loss doesn't improve after a given patience """
-
-    def __init__(self, args):
-        # How long to wait after last time validation loss improved
-        self.patience = args.early_stop_patience
-        # Minimum change in the monitored quantity to qualify as an improvement
-        self.delta = args.delta
-        self.counter = 0
-        self.best_score = None
-        self.check_early_stop = False
-        self.val_loss_min = np.Inf
-        self.model_name = args.trained_model_name
-
-    def __call__(self, val_loss, model):
-        score = -val_loss
-        if self.best_score is None:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model)
-        elif score < self.best_score + self.delta:
-            self.counter += 1
-            print("Early stopping counter: {}/{}".format(self.counter, self.patience))
-            if self.counter >= self.patience:
-                self.check_early_stop = True
-        else:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model)
-            self.counter = 0
 
     def save_checkpoint(self, val_loss, model):
         """Saves model when validation loss decrease """
@@ -198,6 +127,54 @@ class EarlyStopping:
         torch.save(model.state_dict(), os.path.join("/home/lbusser/hbird_scripts/hbird_eval/data", "models", self.model_name+".pt"))
         self.val_loss_min = val_loss
 
+
+def load_color_mapping(json_file):
+    with open(json_file, 'r') as f:
+        color_mapping = json.load(f)
+    # Convert string keys to integers
+    return {tuple(map(int, v)): int(k) for k, v in color_mapping.items()}
+
+def quantize_colors(reconstructed_color, color_mapping):
+    # Transpose the color to have shape [224, 224, 3]
+    if reconstructed_color.shape[0] == 3:
+        reconstructed_color = reconstructed_color.permute(1, 2, 0).numpy()
+    
+    quantized_mask = np.zeros((reconstructed_color.shape[0], reconstructed_color.shape[1], 3), dtype=np.uint8)
+    
+    for i in range(reconstructed_color.shape[0]):
+        for j in range(reconstructed_color.shape[1]):
+            pixel = reconstructed_color[i, j]
+            if isinstance(pixel, torch.Tensor):
+                pixel = pixel.numpy()
+            print(pixel)
+            closest_color = min(color_mapping.keys(), key=lambda color: np.linalg.norm(np.array(color) - pixel))
+            print(closest_color)
+            quantized_mask[i, j, :] = closest_color
+    return quantized_mask
+
+def color_mask_to_label_mask(color_mask, color_mapping):
+    label_mask = np.zeros((color_mask.shape[0], color_mask.shape[1]), dtype=np.int32)
+    for color, label in color_mapping.items():
+        color_mask_bool = np.all(color_mask == np.array(color), axis=-1)
+        label_mask[color_mask_bool] = label
+    return label_mask
+
+def calculate_iou(pred_mask, true_mask, class_ids):
+    ious = []
+
+    for cls in class_ids:
+        pred_cls = (pred_mask == cls)
+        true_cls = (true_mask == cls)
+        
+        intersection = np.logical_and(pred_cls, true_cls).sum()
+        union = np.logical_or(pred_cls, true_cls).sum()
+        
+        if union == 0:
+            ious.append(np.nan)
+        else:
+            iou = intersection / union
+            ious.append(iou)
+    return ious
 
 def count_model_params(model_parameters):
     params = list(filter(lambda p: p.requires_grad, model_parameters))
@@ -223,7 +200,7 @@ if __name__ == '__main__':
 
     # COCO training / non-episodic image captioning
     argparser.add_argument('--num_epochs', type=int, help='epoch number for training', default=10)
-    argparser.add_argument('--batch_size', type=int, help='batch size for few shot training', default=8)
+    argparser.add_argument('--batch_size', type=int, help='batch size for few shot training', default=4)
     argparser.add_argument('--test_batch_size', type=int, help='batch size for few shot testing', default=4)
     argparser.add_argument('--coco_annotations_path', type=str, default='/scratch-shared/combined_hbird/mscoco_hbird/annotations/')
     argparser.add_argument('--early_stop_patience', type=int, help='#epochs w/o improvement', default=3)
@@ -267,13 +244,13 @@ if __name__ == '__main__':
             Resize(size=(input_size, input_size)),
         ])
     
-    cluster_index = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_index.index")
-    image_ids = sorted(os.listdir("/scratch-shared/combined_hbird/mscoco_hbird/train2017/"))
-    train_idx, val_idx = train_test_split(np.arange(len(image_ids)), test_size=0.2, random_state=0)
-    train_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train',  setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_train_transform, shared_train_transform), mode_idx=train_idx)
-    val_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train', setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index,cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), mode_idx=val_idx)
-    # train_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
-    # val_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx= val_idx)
+    # cluster_index = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_index.index")
+    # image_ids = sorted(os.listdir("/scratch-shared/combined_hbird/mscoco_hbird/train2017/"))
+    # train_idx, val_idx = train_test_split(np.arange(len(image_ids)), test_size=0.2, random_state=0)
+    # train_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train',  setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_train_transform, shared_train_transform), mode_idx=train_idx)
+    # val_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train', setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index,cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), mode_idx=val_idx)
+    # # train_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
+    # # val_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx= val_idx)
     # cluster_index_nyu = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_index.index")
     # cluster_assignment = '/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_assignments.pkl'
     # image_paths = pd.read_csv("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/nyu2_train.csv")
@@ -281,31 +258,30 @@ if __name__ == '__main__':
     # train_set_NYU = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
     # val_set_NYU = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize= input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform),mode_idx = val_idx)
     
-    train_set = CombinedDataset([train_set_COCO])
-    val_set = CombinedDataset([val_set_COCO])
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=False,
-                              num_workers=args.num_workers, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False,
-                            num_workers=args.num_workers, pin_memory=True, drop_last=True)
+    # train_set = CombinedDataset([train_set_COCO, train_set_NYU], [3,1])
+    # val_set = CombinedDataset([val_set_COCO, val_set_NYU],[3,1])
+    # train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=False,
+    #                           num_workers=args.num_workers, pin_memory=True, drop_last=True)
+    # val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False,
+    #                         num_workers=args.num_workers, pin_memory=True, drop_last=True)
     #------------------------------------------TEST------------------------------------
     test_coco_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
-    # test_nyu_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
+    test_nyu_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
     
     image_val_transform = trn.Compose([ trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
     shared_val_transform = Compose([
                 Resize(size=(input_size, input_size)),
             ]) 
-
-    coco_test_set = CocoMemoryTasksDataLoader("/scratch-shared/combined_hbird/mscoco_hbird",'val', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
-    # nyu_test_set = NYUMemoryTasksDataLoader("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", 'test', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
-    # kp_test_set = KeyPointMemoryTasksDataLoader("/scratch-shared/combined_hbird/mscoco_hbird", 'val', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
-    test_set = CombinedDataset([coco_test_set])
+    panoptic = True
+    coco_test_set = CocoMemoryTasksDataLoader("/scratch-shared/combined_hbird/mscoco_hbird",'val', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), panoptic=panoptic)
+    nyu_test_set = NYUMemoryTasksDataLoader("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", 'test', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
+    test_set = CombinedDataset([coco_test_set], [1])
 
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
     
     #------------------------initalise model and train--------------------------------
-    trainer = MainTrainer(args, train_loader, val_loader, test_loader)
-    trainer.train()
+    trainer = MainTrainer(args, None, None, test_loader)
+    # trainer.train()
     print("-------------------------------------------------------INFERENCE-------------------------------------------------------")
     trainer.inference()
     print(f"DONE TESTING {args.trained_model_name}")
