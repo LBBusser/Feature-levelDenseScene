@@ -117,7 +117,7 @@ class HummingbirdClustering():
         with open(filename, 'wb') as file:
             pickle.dump(features, file, protocol=pickle.HIGHEST_PROTOCOL)  
     
-    def load_features(self, filename=f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_{CLUSTERS}_cluster_results/features_dict.pkl'):
+    def load_features(self, filename=f'data/{DATASET}_dinov2_{CLUSTERS}_cluster_results/features_dict.pkl'):
         with open(filename, 'rb') as file:
             return pickle.load(file)
         
