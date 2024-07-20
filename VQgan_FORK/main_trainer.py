@@ -202,7 +202,7 @@ if __name__ == '__main__':
     argparser.add_argument('--num_epochs', type=int, help='epoch number for training', default=10)
     argparser.add_argument('--batch_size', type=int, help='batch size for few shot training', default=4)
     argparser.add_argument('--test_batch_size', type=int, help='batch size for few shot testing', default=4)
-    argparser.add_argument('--coco_annotations_path', type=str, default='/scratch-shared/combined_hbird/mscoco_hbird/annotations/')
+    argparser.add_argument('--coco_annotations_path', type=str, default='annotations/')
     argparser.add_argument('--early_stop_patience', type=int, help='#epochs w/o improvement', default=3)
     argparser.add_argument('--delta', type=float, help='min change in the monitored val loss', default=0.01)
     argparser.add_argument('--lr', type=float, help='LR for training', default=5e-04)
