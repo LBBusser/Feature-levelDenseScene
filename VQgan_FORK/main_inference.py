@@ -28,7 +28,7 @@ def main_inference(args, model_name):
     vit_model = torch.hub.load('facebookresearch/dinov2', MODEL)
     feature_extractor = FeatureExtractor(vit_model)
     model = MetaTrainer(args, feature_extractor, mode = 'test')
-    model_dict = torch.load('/home/lbusser/hbird_scripts/hbird_eval/data/models/' + model_name, map_location=torch.device(device))
+    model_dict = torch.load('data/models/' + model_name, map_location=torch.device(device))
     model.load_state_dict(model_dict)
     params = list(filter(lambda p: p.requires_grad, model.model.parameters()))
     params_summed = sum(p.numel() for p in params)
@@ -39,10 +39,10 @@ def main_inference(args, model_name):
             Resize(size=(input_size, input_size)),
         ])
 
-    coco_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
-    nyu_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
-    coco_test_set = CocoMemoryTasksDataLoader("/scratch-shared/combined_hbird/mscoco_hbird",'val', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl',transforms = (image_val_transform, shared_val_transform))
-    nyu_test_set = NYUMemoryTasksDataLoader("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", 'test', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
+    coco_cluster_index = faiss.read_index('data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
+    nyu_cluster_index = faiss.read_index('data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
+    coco_test_set = CocoMemoryTasksDataLoader("mscoco_hbird",'val', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl',transforms = (image_val_transform, shared_val_transform))
+    nyu_test_set = NYUMemoryTasksDataLoader("nyu_hbird/nyu_data/data/", 'test', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
     
     test_set = CombinedDataset([coco_test_set, nyu_test_set])
     db_test = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
@@ -71,9 +71,9 @@ def main_inference(args, model_name):
     print("Mean IoU:", miou_score)
     # accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
     print("Mean MAE:", sum(mae_scores)/len(mae_scores))
-    torch.save(all_labels, '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{model_name}_gts.pt")
-    torch.save(all_images, '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{model_name}_imgs.pt")
-    torch.save(preds_all_test, '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{model_name}_preds.pt")
+    torch.save(all_labels, 'data/models/predictions/' + f"{model_name}_gts.pt")
+    torch.save(all_images, 'data/models/predictions/' + f"{model_name}_imgs.pt")
+    torch.save(preds_all_test, 'data/models/predictions/' + f"{model_name}_preds.pt")
     # my_utils.write_data_to_txt(file_path=log_file_path, data="FINAL: \tTest acc: {} \n".format(accs))
 
 
