@@ -65,7 +65,7 @@ class MainTrainer:
         all_predictions = []
         all_labels = []
         all_images = []
-        # color_mapping = load_color_mapping('/home/lbusser/hbird_scripts/hbird_eval/data/color_map.json')
+        # color_mapping = load_color_mapping('data/color_map.json')
         # class_ids = list(color_mapping.values())
         # total_ious = []
         model = MetaTrainer.load_from_checkpoint('/checkpoints/epoch=36-step=92500.ckpt', args=args)
