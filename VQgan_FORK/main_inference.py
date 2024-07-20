@@ -41,8 +41,8 @@ def main_inference(args, model_name):
 
     coco_cluster_index = faiss.read_index('data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
     nyu_cluster_index = faiss.read_index('data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
-    coco_test_set = CocoMemoryTasksDataLoader("mscoco_hbird",'val', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl',transforms = (image_val_transform, shared_val_transform))
-    nyu_test_set = NYUMemoryTasksDataLoader("nyu_hbird/nyu_data/data/", 'test', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
+    coco_test_set = CocoMemoryTasksDataLoader("mscoco_hbird",'val', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= coco_cluster_index, cluster_assignment= 'data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl',transforms = (image_val_transform, shared_val_transform))
+    nyu_test_set = NYUMemoryTasksDataLoader("nyu_hbird/nyu_data/data/", 'test', 100, args.k_spt, args.k_qry, args.img_size, cluster_index= nyu_cluster_index, cluster_assignment='data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
     
     test_set = CombinedDataset([coco_test_set, nyu_test_set])
     db_test = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
