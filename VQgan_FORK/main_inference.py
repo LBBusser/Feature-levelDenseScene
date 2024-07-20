@@ -13,7 +13,7 @@ from eval_metrics import *
 from sklearn.metrics import mean_absolute_error
 
 PATH = str(Path.cwd().parent.parent.parent)  # root directory
-MODELS_PATH = '/home/lbusser/hbird_scripts/hbird_eval/data/models'
+MODELS_PATH = 'data/models'
 MODEL = 'dinov2_vitb14'
 
 torch.manual_seed(222)
