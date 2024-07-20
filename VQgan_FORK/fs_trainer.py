@@ -44,8 +44,8 @@ class MetaTrainer(L.LightningModule):
         self.num_epochs = args.num_epochs
         self.warm_up_steps = args.warm_up_steps
         self.resize = args.img_size
-        config_path = "/home/lbusser/hbird_scripts/hbird_eval/data/models/vqgan/configs/config16.yaml"
-        ckpt_path = "/home/lbusser/hbird_scripts/hbird_eval/data/models/vqgan/checkpoints/model16.ckpt"
+        config_path = "data/models/vqgan/configs/config16.yaml"
+        ckpt_path = "data/models/vqgan/checkpoints/model16.ckpt"
         vit_model = torch.hub.load('facebookresearch/dinov2', MODEL)
         config = self.load_config(config_path)
         self.vq_model = self.load_vqgan(config, ckpt_path)
@@ -177,78 +177,4 @@ class MetaTrainer(L.LightningModule):
             missing, unexpected = model.load_state_dict(sd, strict=False)
         return model.eval()
 
-
-
-
-if __name__ == "__main__":
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument('--experiment_id', type=int, default=5)
-    argparser.add_argument('--epoch', type=int, help='epoch number', default=5)
-    argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=6)
-    argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=2)
-    argparser.add_argument('--img_size', type=int, help='img_size', default=504)
-    argparser.add_argument('--task_num', type=int, help='meta batch size, namely task num', default=4)
-    argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
-    argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.01)
-    argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
-    argparser.add_argument('--update_step_test', type=int, help='update steps for fine-tunning', default=5)
-    argparser.add_argument('--num_workers', type=int, default=8)
-    argparser.add_argument('--dataset', type=str, default='coco')
-
-    # COCO training / non-episodic image captioning
-    argparser.add_argument('--coco_num_epochs', type=int, help='epoch number for training', default=100)
-    argparser.add_argument('--coco_batch_size', type=int, help='batch size for training', default=8)
-    argparser.add_argument('--coco_annotations_path', type=str, default='/home/lbusser/annotations/')
-    argparser.add_argument('--early_stop_patience', type=int, help='#epochs w/o improvement', default=5)
-    argparser.add_argument('--delta', type=float, help='min change in the monitored val loss', default=0.01)
-    argparser.add_argument('--lr', type=float, help='LR for training', default=3e-05)
-    argparser.add_argument('--warm_up_steps', type=int, help='warm up steps', default=1000)
-    argparser.add_argument('--trained_model_name', type=str, default='default.pt')
-    argparser.add_argument('--patch_size', type=int, default=14)
-    #SCANN setup
-    argparser.add_argument('--num_leaves', type=int, default=1)
-    argparser.add_argument('--num_leaves_to_search', type=int, default=1)
-    argparser.add_argument('--reorder', type=int, default=1800)
-    argparser.add_argument('--num_neighbors', type=int, default=5)
-    args = argparser.parse_args()
-
-    MODEL = 'dinov2_vitb14'
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
-    brightness_jitter_range = 0.1
-    contrast_jitter_range = 0.1
-    saturation_jitter_range = 0.1
-    hue_jitter_range = 0.1
-    brightness_jitter_probability = 0.5
-    contrast_jitter_probability = 0.5
-    saturation_jitter_probability = 0.5
-    hue_jitter_probability = 0.5
-    input_size = args.img_size
-    image_train_transform = trn.Compose([
-            trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-            trn.RandomApply([trn.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-            trn.RandomApply([trn.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-            trn.RandomApply([trn.ColorJitter(hue=hue_jitter_probability)], p=hue_jitter_probability),
-            trn.ToTensor(),
-            trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255]),
-        ])
-    shared_train_transform = Compose([
-            Resize(size=(input_size, input_size)),
-            # RandomHorizontalFlip(probability=0.1),
-        ])
-    cluster_index = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_index.index")
-    cluster_index_nyu = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_index.index")
-   
-    image_paths = pd.read_csv("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/nyu2_train.csv")
-    train_idx, val_idx = train_test_split(np.arange(len(image_paths)), test_size=0.2, random_state = 0)
-    # few_shot_ds = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", batchsz=10, k_shot=3, k_query=2, resize=504, cluster_index= cluster_index,cluster_assignment="/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl", transforms = (image_train_transform, shared_train_transform))
-    few_shot_ds = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="train", batchsz=100, k_shot=3, k_query=2, resize=504, cluster_index= cluster_index_nyu, cluster_assignment = '/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_assignments.pkl', mode_idx = train_idx, transforms = (image_train_transform, shared_train_transform))
-    eval_spatial_resolution = input_size // 14
-    vit_model = torch.hub.load('facebookresearch/dinov2', MODEL)
-
-    feature_extractor = FeatureExtractor(vit_model)
-    test = MetaTrainer(args, feature_extractor)
-    dl_train = DataLoader(few_shot_ds, batch_size=2, shuffle=True, pin_memory=True)
-    for x_spt, y_spt, x_qry, y_qry in tqdm(dl_train):
-        out = test.forward(x_spt, y_spt, x_qry, y_qry)
     
