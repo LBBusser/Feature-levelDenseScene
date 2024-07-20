@@ -206,7 +206,7 @@ class COCODataModule():
         num_workers (int): Number of workers for dataloader
     """
 
-    def __init__(self, batch_size, train_transform, val_transform, dir="/scratch-shared/combined_hbird/mscoco_hbird/", num_workers=0, task = "normal", annotation_dir = None, cluster_images = None, memory_bank = False) -> None:
+    def __init__(self, batch_size, train_transform, val_transform, dir="mscoco_hbird/", num_workers=0, task = "normal", annotation_dir = None, cluster_images = None, memory_bank = False) -> None:
         self.batch_size = batch_size
         self.dir = dir
         self.task = task
@@ -278,7 +278,7 @@ class NYUv2DataModule():
 
     """
 
-    def __init__(self, batch_size, train_transform, val_transform, dir="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/", num_workers=0, cluster_images = None, memory_bank = False) -> None:
+    def __init__(self, batch_size, train_transform, val_transform, dir="nyu_data/", num_workers=0, cluster_images = None, memory_bank = False) -> None:
         self.batch_size = batch_size
         self.dir = dir
         self.train_transform = train_transform['train']
@@ -401,7 +401,7 @@ class PascalVOCDataModule():
 
     """
 
-    def __init__(self, batch_size, train_transform, val_transform, test_transform,  dir="/scratch-shared/tmp.xc2nBiDuTi/VOCdevkit/VOC2012/", num_workers=0) -> None:
+    def __init__(self, batch_size, train_transform, val_transform, test_transform,  dir="VOCdevkit/VOC2012/", num_workers=0) -> None:
         super().__init__()
         self.num_workers = num_workers
         self.batch_size = batch_size
@@ -755,7 +755,7 @@ class CocoMemoryTasksDataLoader(Dataset):
         img_name = f"{self.path}/{self.mode}2017/{int(img_id):012d}.jpg"
         mask_name = f"{self.path}/{self.mode}_masks2017/{int(img_id):012d}.png"
         if self.panoptic:
-            mask_name = f"/home/lbusser/annotations/panoptic/panoptic_val2017/{int(img_id):012d}.png"
+            mask_name = f"annotations/panoptic/panoptic_val2017/{int(img_id):012d}.png"
         return img_name, mask_name
 
 
@@ -851,227 +851,4 @@ class CombinedDataset(Dataset):
 
         return self.datasets[dataset_idx][data_idx]
 
-        
-def test_mscoco_data_module(logger):
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
-    brightness_jitter_range = 0.1
-    contrast_jitter_range = 0.1
-    saturation_jitter_range = 0.1
-    hue_jitter_range = 0.1
-
-    brightness_jitter_probability = 0.5
-    contrast_jitter_probability = 0.5
-    saturation_jitter_probability = 0.5
-    hue_jitter_probability = 0.5
-
-    # Create the transformation
-    image_train_transform = trn.Compose([
-        trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(hue=hue_jitter_range)], p=hue_jitter_probability),
-        trn.ToTensor(),
-        trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])
-    ])
-    shared_train_transform = Compose([
-            RandomResizedCrop(size=(504, 504), scale=(min_scale_factor, max_scale_factor)),
-            # RandomHorizontalFlip(probability=0.1),
-        ])
-
-    image_val_transform = trn.Compose([
-        trn.ToTensor(),
-        trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])
-    ])
-    shared_transform = Compose([
-        RandomResizedCrop(size=(448, 448), scale=(min_scale_factor, max_scale_factor)),
-        # RandomHorizontalFlip(probability=0.1),
-    ])
-    shared_val_transform = Compose([
-            Resize(size=(504, 504)),
-        ])
-
-        # target_train_transform = trn.Compose([trn.Resize((224, 224), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
-    train_transforms = {"train": image_train_transform, "shared":shared_train_transform}
-    val_transforms = {"val": image_val_transform , "shared": shared_val_transform}
     
-    dataset = COCODataModule(batch_size=1, train_transform=train_transforms, val_transform=val_transforms, annotation_dir = "/scratch-shared/mscoco_hbird/annotations")
-    dataset.setup()
-    train_dataloader = dataset.get_train_dataloader()
-    val_dataloader = dataset.get_val_dataloader()
-    # test_dataloader = dataset.get_test_dataloader()
-    # print(f"Train size : {len(dataset.train_dataset)}")
-    # print(f"Val size : {len(dataset.val_dataset)}")
-    # # print(f"Test size : {len(dataset.test_dataset)}")
-    # print(f"Train dataloader size : {len(train_dataloader)}")
-    # print(f"Val dataloader size : {len(val_dataloader)}")
-    # print(f"Test dataloader size : {len(test_dataloader)}")
-    for i, (x, y, name) in enumerate(train_dataloader):
-        print(f"Train batch {i} : {x.shape}, {y.shape}")
-        print(torch.unique(y[0]))
-        # y[y==165] = 0 #For stuff segmentation.
-        ## log image
-        logger.log({"train_batch": [wandb.Image(x[0]), wandb.Image(y[0])]})
-        if i ==10:
-            break
-
-
-def test_pascal_data_module(logger):
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
-    brightness_jitter_range = 0.1
-    contrast_jitter_range = 0.1
-    saturation_jitter_range = 0.1
-    hue_jitter_range = 0.1
-
-    brightness_jitter_probability = 0.5
-    contrast_jitter_probability = 0.5
-    saturation_jitter_probability = 0.5
-    hue_jitter_probability = 0.5
-
-    # Create the transformation
-    image_train_transform = trn.Compose([
-        trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-        trn.RandomApply([trn.ColorJitter(hue=hue_jitter_range)], p=hue_jitter_probability),
-        trn.ToTensor(),
-        trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])
-    ])
-
-    shared_transform = Compose([
-        RandomResizedCrop(size=(448, 448), scale=(min_scale_factor, max_scale_factor)),
-        # RandomHorizontalFlip(probability=0.1),
-    ])
-        
-    
-    # image_train_transform = trn.Compose([trn.Resize((448, 448)), trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
-    # target_train_transform = trn.Compose([trn.Resize((448, 448), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
-    train_transforms = {"img": image_train_transform, "target": None, "shared": shared_transform}
-    dataset = PascalVOCDataModule(batch_size=4, train_transform=train_transforms, val_transform=train_transforms, test_transform=train_transforms)
-    dataset.setup()
-    train_dataloader = dataset.get_train_dataloader()
-    val_dataloader = dataset.get_val_dataloader()
-    test_dataloader = dataset.get_test_dataloader()
-    print(f"Train size : {len(dataset.train_dataset)}")
-    print(f"Val size : {len(dataset.val_dataset)}")
-    print(f"Test size : {len(dataset.test_dataset)}")
-    print(f"Train dataloader size : {len(train_dataloader)}")
-    print(f"Val dataloader size : {len(val_dataloader)}")
-    print(f"Test dataloader size : {len(test_dataloader)}")
-    for i, (x, y) in enumerate(val_dataloader):
-        print(f"Train batch {i} : {x.shape}, {y.shape}")
-        ## log image
-        classes = torch.unique((y * 255).long())
-        print(f"Number of classes : {classes}")
-        logger.log({"train_batch": [wandb.Image(x[0]), wandb.Image(y[0])]})
-        if i == 5:
-            break
-
-def test_nyuv2_data_module(logger):
-    input_size = 504
-     # Define transformation parameters
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
-    brightness_jitter_range = 0.1
-    contrast_jitter_range = 0.1
-    saturation_jitter_range = 0.1
-    hue_jitter_range = 0.1
-    brightness_jitter_probability = 0.5
-    contrast_jitter_probability = 0.5
-    saturation_jitter_probability = 0.5
-    hue_jitter_probability = 0.5
-
-    # Create the transformation
-    image_train_transform = trn.Compose([
-        trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-        trn.RandomApply([transforms.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-        trn.RandomApply([transforms.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-        trn.RandomApply([transforms.ColorJitter(hue=hue_jitter_probability)], p=hue_jitter_probability),
-        trn.ToTensor(),
-        trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])
-    ])
-
-    shared_train_transform = Compose([
-        RandomResizedCrop(size=(input_size, input_size), scale=(min_scale_factor, max_scale_factor)),
-        # RandomHorizontalFlip(probability=0.1),
-    ])
-
-    image_val_transform = trn.Compose([ trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
-    shared_val_transform = Compose([
-        Resize(size=(input_size, input_size)),
-    ])
-
-    # target_train_transform = trn.Compose([trn.Resize((224, 224), interpolation=trn.InterpolationMode.NEAREST), trn.ToTensor()])
-    train_transforms = {"train": image_train_transform, "shared": shared_train_transform}
-    val_transforms = {"val": image_val_transform , "shared": shared_val_transform}
-    dataset = NYUv2DataModule(batch_size=1, train_transform=train_transforms, val_transform=val_transforms)
-    dataset.setup()
-    train_dataloader = dataset.get_train_dataloader()
-    val_dataloader = dataset.get_val_dataloader()
-    # print(f"Train size : {len(dataset.train_dataset)}")
-    # print(f"Val size : {len(dataset.val_dataset)}")
-    # print(f"Test size : {len(dataset.test_dataset)}")
-    # print(f"Train dataloader size : {len(train_dataloader)}")
-    # print(f"Val dataloader size : {len(val_dataloader)}")
-    # print(f"Test dataloader size : {len(test_dataloader)}")
-    for i, (x, y,_) in enumerate(train_dataloader):
-        print(f"Train batch {i} : {x.shape}, {y.shape}")
-        ## log image
-        y.to(device)
-        logger.log({"train_batch": [wandb.Image(x[0]), wandb.Image(y[0])]})
-        if i ==10:
-            break
-
-
-
-    
-
-if __name__ == "__main__":
-    ## init wandb
-    # logger = wandb.init(project=project_name, group="data_loader", tags="MSCOCODataModule", job_type="eval")
-    ## test data module
-    # test_pascal_data_module(logger)
-    ## finish wandb
-    # logger.finish()
-    # test_nyuv2_data_module(logger)
-    # NYUv2(root="/somepath/NYUv2", download=True, 
-    #   rgb_transform=t, seg_transform=t, sn_transform=t, depth_transform=t)
-    eval_spatial_resolution = 224 // 14
-    # Define transformation parameters
-    min_scale_factor = 0.5
-    max_scale_factor = 2.0
-    brightness_jitter_range = 0.1
-    contrast_jitter_range = 0.1
-    saturation_jitter_range = 0.1
-    hue_jitter_range = 0.1
-    brightness_jitter_probability = 0.5
-    contrast_jitter_probability = 0.5
-    saturation_jitter_probability = 0.5
-    hue_jitter_probability = 0.5
-
-    image_train_transform = trn.Compose([
-            trn.RandomApply([trn.ColorJitter(brightness=brightness_jitter_range)], p=brightness_jitter_probability),
-            trn.RandomApply([transforms.ColorJitter(contrast=contrast_jitter_range)], p=contrast_jitter_probability),
-            trn.RandomApply([transforms.ColorJitter(saturation=saturation_jitter_range)], p=saturation_jitter_probability),
-            trn.RandomApply([transforms.ColorJitter(hue=hue_jitter_probability)], p=hue_jitter_probability),
-            trn.ToTensor(),
-            trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255]),
-        ])
-    shared_train_transform = Compose([
-            Resize(size=(224, 224)),
-            # RandomHorizontalFlip(probability=0.1),
-        ])
-    cluster_index = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index")
-    cluster_index_nyu = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index")
-    cluster_assignment = '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl'
-    # few_shot_ds = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="val", setsz=100, k_shot=5, k_query=1, resize=224, cluster_index= cluster_index, cluster_assignment=cluster_assignment, transforms = (image_train_transform, shared_train_transform))
-    few_shot_ds = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="test", setsz=100, k_shot=5, k_query=1, resize=224, cluster_index= cluster_index_nyu, transforms = (image_train_transform, shared_train_transform), cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl')
-    dl = DataLoader(few_shot_ds, batch_size=1, shuffle=False)
-    for i, (support_x, support_y, query_x, query_y) in enumerate(dl):
-        print(f"Batch {i} : {support_x.shape}, {support_y.shape}, {query_x.shape}, {query_y.shape}")
-        print(support_y.max())
-
-        break
-#--------------------------------------------------------------------------
-s
