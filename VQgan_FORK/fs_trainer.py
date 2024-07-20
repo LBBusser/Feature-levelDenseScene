@@ -7,7 +7,7 @@ from torch import nn
 from torch import optim
 from torch.nn import functional as F
 from models import FeatureExtractorBeta as FeatureExtractor
-sys.path.append('/home/lbusser/taming-transformers/')
+sys.path.append('taming-transformers/')
 from taming.models.vqgan import VQModel, GumbelVQ
 from omegaconf import OmegaConf
 from transformers import get_constant_schedule_with_warmup, get_cosine_schedule_with_warmup
