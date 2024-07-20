@@ -26,7 +26,7 @@ from image_transformations import Compose, RandomResizedCrop, RandomHorizontalFl
 from torch.utils.data import DataLoader
 import lightning as L
 # PATH = str(Path.cwd().parent)
-MODELS_PATH = "/home/lbusser/hbird_scripts/hbird_eval/data/models"
+MODELS_PATH = "data/models"
 MODEL = 'dinov2_vitb14'
 
 
