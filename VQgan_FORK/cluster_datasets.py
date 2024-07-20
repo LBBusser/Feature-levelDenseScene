@@ -43,7 +43,7 @@ arch = args.arch
 DATASET = args.dataset
 MODEL_DEVICE = args.model_device
 MODEL = f'{MODEL_TYPE}_{arch}{patch_size}'
-DIR = '/home/lbusser/hbird_scripts/hbird_eval/data'
+DIR = 'data'
 EXP_NAME = f'{DATASET}_{MODEL}_{CLUSTERS}_cluster_results/'
 
 EXP_DIR = os.path.join(DIR, EXP_NAME)
@@ -127,7 +127,7 @@ class HummingbirdClustering():
         with open(filename, 'wb') as file:
             pickle.dump(cluster_assignments, file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def load_cluster_assignments(filename=f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_assignments.pkl'):
+    def load_cluster_assignments(filename=f'data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_assignments.pkl'):
         with open(filename, 'rb') as file:
             return pickle.load(file)
         
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     train_transforms = {"train": image_train_transform, "target": None, "shared": shared_train_transform}
     val_transforms = {"val": image_val_transform, "target": None , "shared": shared_val_transform}
     if DATASET == "MSCOCO":
-            dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, task=task, annotation_dir="/home/lbusser/annotations")
+            dataset = COCODataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms, task=task, annotation_dir="annotations")
     elif DATASET == "NYUv2":
             dataset = NYUv2DataModule(batch_size=64, train_transform=train_transforms, val_transform=val_transforms)
     else:
@@ -191,38 +191,3 @@ if __name__ == "__main__":
     evaluator = HummingbirdClustering(feature_extractor, dataset, num_clusters=CLUSTERS, device=device)
     
     
-    
-    ###########
-    ## TEST  ##
-    ###########
-    # Load the cluster assignments from the .pkl file
-#     with open(f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_assignments.pkl', 'rb') as f:
-#         cluster_assignments = pickle.load(f)
-#     val_loader = dataset.get_val_dataloader(batch_size=1)
-#     loaded_index = faiss.read_index(f'/home/lbusser/hbird_scripts/hbird_eval/data/{DATASET}_dinov2_vitb14_{CLUSTERS}_cluster_results/cluster_index.index')
-#     for i, (x, y, img_names) in enumerate(val_loader):
-#         print(f"batch {i} has been read at {time.ctime()}")
-#         bs = x.shape[0]
-#         x = x.to(device)
-#         y = y.to(device)
-#         y = y.long()
-#         features, _ = feature_extractor.forward_features(x)
-#         flattened_features= features.reshape(bs,-1).detach().cpu()
-#         flattened_features = flattened_features.numpy()
-#         reduced_features = np.mean(flattened_features, axis=1)
-#         _,I = loaded_index.search(reduced_features.reshape(-1,1), 1)
-#         test_image_cluster_id = I[0][0]
-#         corresponding_images = [image_path for image_path, assigned_cluster_id in cluster_assignments.items() if assigned_cluster_id == test_image_cluster_id]
-#         print(corresponding_images)
-#         print(img_names)
-#         destination_dir = os.getcwd()
-
-# # Copy each image to the destination directory
-#         for image_path in corresponding_images:
-#             # Extract the base filename to maintain the original file name
-#             filename = os.path.basename(image_path)
-#             destination_path = os.path.join(destination_dir, filename)
-            
-#             # Copy the file to the new location
-#             shutil.copy(image_path, destination_path)
-#         break
