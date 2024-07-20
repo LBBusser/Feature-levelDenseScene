@@ -68,7 +68,7 @@ class MainTrainer:
         # color_mapping = load_color_mapping('/home/lbusser/hbird_scripts/hbird_eval/data/color_map.json')
         # class_ids = list(color_mapping.values())
         # total_ious = []
-        model = MetaTrainer.load_from_checkpoint('/home/lbusser/lightning_logs/version_6833430/checkpoints/epoch=36-step=92500.ckpt', args=args)
+        model = MetaTrainer.load_from_checkpoint('/checkpoints/epoch=36-step=92500.ckpt', args=args)
         ######
         trainer = L.Trainer(accelerator= 'gpu', devices=1)
         out = trainer.predict(model, self.test_loader)
@@ -110,9 +110,9 @@ class MainTrainer:
         # print(f"Mean Intersection over Union (mIoU): {mean_iou:.4f}")
       
         print("Saving first few test entries for visualisation...")
-        torch.save(all_labels[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_gts.pt")
-        torch.save(all_images[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_imgs.pt")
-        torch.save(all_predictions[0:20], '/home/lbusser/hbird_scripts/hbird_eval/data/models/predictions/' + f"{args.trained_model_name}_preds.pt")
+        torch.save(all_labels[0:20], 'data/models/predictions/' + f"{args.trained_model_name}_gts.pt")
+        torch.save(all_images[0:20], '/data/models/predictions/' + f"{args.trained_model_name}_imgs.pt")
+        torch.save(all_predictions[0:20], 'data/models/predictions/' + f"{args.trained_model_name}_preds.pt")
         # miou_score = miou_calculator.compute()
         # print("Mean IoU:", miou_score)
         # # accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
@@ -124,7 +124,7 @@ class MainTrainer:
         """Saves model when validation loss decrease """
         print("Validation loss decreased ({:.4f}  --> {:.4f}). Saving model {} ..."
               .format(self.val_loss_min, val_loss, self.model_name))
-        torch.save(model.state_dict(), os.path.join("/home/lbusser/hbird_scripts/hbird_eval/data", "models", self.model_name+".pt"))
+        torch.save(model.state_dict(), os.path.join("data", "models", self.model_name+".pt"))
         self.val_loss_min = val_loss
 
 
@@ -244,19 +244,19 @@ if __name__ == '__main__':
             Resize(size=(input_size, input_size)),
         ])
     
-    # cluster_index = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_index.index")
-    # image_ids = sorted(os.listdir("/scratch-shared/combined_hbird/mscoco_hbird/train2017/"))
+    # cluster_index = faiss.read_index("data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_index.index")
+    # image_ids = sorted(os.listdir("train2017/"))
     # train_idx, val_idx = train_test_split(np.arange(len(image_ids)), test_size=0.2, random_state=0)
-    # train_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train',  setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_train_transform, shared_train_transform), mode_idx=train_idx)
-    # val_set_COCO = CocoMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode = 'train', setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index,cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), mode_idx=val_idx)
-    # # train_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
-    # # val_set_KP = KeyPointMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/mscoco_hbird", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx= val_idx)
-    # cluster_index_nyu = faiss.read_index("/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_index.index")
-    # cluster_assignment = '/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_assignments.pkl'
-    # image_paths = pd.read_csv("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/nyu2_train.csv")
+    # train_set_COCO = CocoMemoryTasksDataLoader(data_path="mscoco_hbird", mode = 'train',  setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index, cluster_assignment= 'data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_train_transform, shared_train_transform), mode_idx=train_idx)
+    # val_set_COCO = CocoMemoryTasksDataLoader(data_path="mscoco_hbird", mode = 'train', setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index,cluster_assignment= 'data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), mode_idx=val_idx)
+    # # train_set_KP = KeyPointMemoryTasksDataLoader(data_path="mscoco_hbird", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
+    # # val_set_KP = KeyPointMemoryTasksDataLoader(data_path="mscoco_hbird", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index = cluster_index, cluster_assignment ='data/MSCOCO_dinov2_vitb14_1500_cluster_results/train/cluster_assignments.pkl',  transforms = (image_train_transform, shared_train_transform), mode_idx= val_idx)
+    # cluster_index_nyu = faiss.read_index("data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_index.index")
+    # cluster_assignment = 'data/NYUv2_dinov2_vitb14_500_cluster_results/cluster_assignments.pkl'
+    # image_paths = pd.read_csv("nyu_data/data/nyu2_train.csv")
     # train_idx, val_idx = train_test_split(np.arange(len(image_paths)), test_size=0.2, random_state = 0)
-    # train_set_NYU = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
-    # val_set_NYU = NYUMemoryTasksDataLoader(data_path="/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize= input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform),mode_idx = val_idx)
+    # train_set_NYU = NYUMemoryTasksDataLoader(data_path="data/", mode="train", setsz=args.data_size, k_shot=args.k_spt, k_query=args.k_qry, resize=input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform), mode_idx = train_idx)
+    # val_set_NYU = NYUMemoryTasksDataLoader(data_path="data/", mode="train", setsz=args.val_data_size, k_shot=args.k_spt, k_query=args.k_qry, resize= input_size, cluster_index= cluster_index_nyu, cluster_assignment= cluster_assignment,  transforms = (image_train_transform, shared_train_transform),mode_idx = val_idx)
     
     # train_set = CombinedDataset([train_set_COCO, train_set_NYU], [3,1])
     # val_set = CombinedDataset([val_set_COCO, val_set_NYU],[3,1])
@@ -265,16 +265,16 @@ if __name__ == '__main__':
     # val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False,
     #                         num_workers=args.num_workers, pin_memory=True, drop_last=True)
     #------------------------------------------TEST------------------------------------
-    test_coco_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
-    test_nyu_cluster_index = faiss.read_index('/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
+    test_coco_cluster_index = faiss.read_index('data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_index.index')
+    test_nyu_cluster_index = faiss.read_index('data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_index.index')
     
     image_val_transform = trn.Compose([ trn.ToTensor(), trn.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.255])])
     shared_val_transform = Compose([
                 Resize(size=(input_size, input_size)),
             ]) 
     panoptic = True
-    coco_test_set = CocoMemoryTasksDataLoader("/scratch-shared/combined_hbird/mscoco_hbird",'val', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_coco_cluster_index, cluster_assignment= '/home/lbusser/hbird_scripts/hbird_eval/data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), panoptic=panoptic)
-    nyu_test_set = NYUMemoryTasksDataLoader("/scratch-shared/combined_hbird/nyu_hbird/nyu_data/data/", 'test', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_nyu_cluster_index, cluster_assignment='/home/lbusser/hbird_scripts/hbird_eval/data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
+    coco_test_set = CocoMemoryTasksDataLoader("mscoco_hbird",'val', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_coco_cluster_index, cluster_assignment= 'data/MSCOCO_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform), panoptic=panoptic)
+    nyu_test_set = NYUMemoryTasksDataLoader("nyu_data/data/", 'test', args.test_size, args.testk_spt, args.testk_qry, args.img_size, cluster_index= test_nyu_cluster_index, cluster_assignment='data/NYUv2_dinov2_vitb14_100_cluster_results/cluster_assignments.pkl', transforms = (image_val_transform, shared_val_transform))
     test_set = CombinedDataset([coco_test_set], [1])
 
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
